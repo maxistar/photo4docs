@@ -10,19 +10,22 @@ export class PhotoDownloadService {
 
   constructor(private photoCropService: PhotoCropService) {}
 
-  async renderPhotoJpeg(
+  async renderLayoutJpeg(
     sourceImageUrl: string,
     docType: DocumentType,
+    paper: PaperSize,
     landmarks: FaceLandmarks | null = null
   ): Promise<{ url: string; qualityWarning: boolean; result: CropResult }> {
-    const result = await this.renderPhotoCanvas(sourceImageUrl, docType, landmarks, true, 'image/jpeg', 0.95);
-    if (!result.url) throw new Error('JPEG render did not create a URL');
+    const result = await this.renderPhotoCanvas(sourceImageUrl, docType, landmarks, false, 'image/png');
+    const paperCanvas = this.renderLayoutCanvas(result.canvas, docType, paper);
+    const blob = await this.canvasToBlob(paperCanvas, 'image/jpeg', 0.95);
+    const url = URL.createObjectURL(blob);
 
     if (this.lastJpegUrl) {
       URL.revokeObjectURL(this.lastJpegUrl);
     }
-    this.lastJpegUrl = result.url;
-    return { url: result.url, qualityWarning: result.qualityWarning, result };
+    this.lastJpegUrl = url;
+    return { url, qualityWarning: result.qualityWarning, result };
   }
 
   async renderLayoutPdf(
@@ -105,5 +108,17 @@ export class PhotoDownloadService {
     }
 
     return canvas;
+  }
+
+  private canvasToBlob(canvas: HTMLCanvasElement, mimeType: string, quality?: number): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Unable to render downloadable image'));
+        }
+      }, mimeType, quality);
+    });
   }
 }

@@ -51,13 +51,13 @@ export class Step4DownloadComponent implements OnInit {
   }
 
   async onDownloadJpeg(): Promise<void> {
-    if (!this.sourceImageUrl || !this.docType) return;
+    if (!this.sourceImageUrl || !this.docType || !this.paper) return;
     this.jpegLoading = true;
     try {
-      const { url } = await this.photoDownloadService.renderPhotoJpeg(this.sourceImageUrl, this.docType, this.landmarks);
+      const { url } = await this.photoDownloadService.renderLayoutJpeg(this.sourceImageUrl, this.docType, this.paper, this.landmarks);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'biometric-photo.jpg';
+      a.download = 'photo-layout.jpg';
       a.click();
     } finally {
       this.jpegLoading = false;

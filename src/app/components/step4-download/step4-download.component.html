@@ -17,14 +17,14 @@
     <div class="download-options">
       <div class="download-option">
         <div class="option-info">
-          <span class="option-title">Single Photo (JPEG)</span>
+          <span class="option-title">Print Layout (JPEG)</span>
           <span class="option-desc">
-            {{ photoState.selectedDocumentType.getValue()?.widthMm }}mm &times; {{ photoState.selectedDocumentType.getValue()?.heightMm }}mm &middot; 300 DPI
+            {{ photoState.selectedPaperSize.getValue()?.name }} &middot; 300 DPI &middot; print at 100%
           </span>
         </div>
         <button class="download-btn" (click)="onDownloadJpeg()" [disabled]="jpegLoading">
           <span *ngIf="jpegLoading" class="spinner"></span>
-          <span>{{ jpegLoading ? 'Rendering…' : 'Download JPEG' }}</span>
+          <span>{{ jpegLoading ? 'Rendering…' : 'Download Image' }}</span>
         </button>
       </div>
 
