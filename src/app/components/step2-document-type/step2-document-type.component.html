@@ -27,12 +27,22 @@
       <div *ngIf="selectedDocumentType" class="document-details">
         <h3>Document Details</h3>
         <p><strong>Name:</strong> {{ selectedDocumentType.name }}</p>
-        <p><strong>Dimensions:</strong> {{ selectedDocumentType.widthMm }} × {{ selectedDocumentType.heightMm }} mm</p>
+        <p><strong>Dimensions:</strong> {{ selectedDocumentType.widthMm }} x {{ selectedDocumentType.heightMm }} mm</p>
+        <p><strong>Crop:</strong> {{ hasRuleMetadata(selectedDocumentType) ? 'Biometric rules' : 'Centered aspect ratio' }}</p>
+        <p><strong>Color:</strong> {{ formatColorMode(selectedDocumentType) }}</p>
+        <p><strong>Paper:</strong> {{ formatPaperType(selectedDocumentType) }}</p>
+        <p *ngIf="selectedDocumentType.backgroundColor"><strong>Background:</strong> {{ selectedDocumentType.backgroundColor }}</p>
+        <p *ngIf="selectedDocumentType.decoration"><strong>Decoration:</strong> {{ selectedDocumentType.decoration }}</p>
+        <p *ngIf="selectedDocumentType.description" class="description">{{ selectedDocumentType.description }}</p>
       </div>
     </div>
 
     <!-- Preview panel: cropped photo -->
     <div class="preview-panel">
+      <div *ngIf="cropWarning" class="crop-warning">
+        {{ cropWarning }}
+      </div>
+
       <!-- Loading spinner -->
       <div *ngIf="previewLoading" class="preview-placeholder">
         <div class="spinner"></div>
@@ -40,10 +50,14 @@
 
       <!-- Cropped photo preview -->
       <ng-container *ngIf="!previewLoading">
-        <img *ngIf="previewUrl"
-             [src]="previewUrl"
-             alt="Document photo preview"
-             class="preview-image">
+        <div *ngIf="previewUrl" class="preview-frame">
+          <img #previewImg
+               [src]="previewUrl"
+               alt="Document photo preview"
+               class="preview-image"
+               (load)="onPreviewLoaded()">
+          <canvas #guideCanvas class="guide-canvas"></canvas>
+        </div>
         <div *ngIf="!previewUrl" class="preview-placeholder">
           <span>No photo</span>
         </div>
@@ -51,7 +65,7 @@
 
       <!-- Dimension label under preview -->
       <p *ngIf="selectedDocumentType && !previewLoading" class="preview-label">
-        {{ selectedDocumentType.widthMm }} × {{ selectedDocumentType.heightMm }} mm
+        {{ selectedDocumentType.widthMm }} x {{ selectedDocumentType.heightMm }} mm
       </p>
     </div>
 

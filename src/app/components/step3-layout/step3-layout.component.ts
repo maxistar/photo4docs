@@ -62,7 +62,7 @@ export class Step3LayoutComponent implements OnInit {
       this.previewUrl = result.url;
       this.gridCols = result.cols;
       this.gridRows = result.rows;
-      this.photoState.layoutPreviewUrl.next(result.url);
+      this.photoState.setLayoutPreviewUrl(result.url);
     } finally {
       this.previewLoading = false;
     }

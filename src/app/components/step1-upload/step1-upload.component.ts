@@ -108,16 +108,29 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
       landmarks.faceBox.height * scaleY
     );
 
-    // Eye boxes
+    // Eye boxes and precise centre line
     ctx.strokeStyle = '#00cc44';
     ctx.lineWidth = 2;
+    const eyeCenters: Array<{ x: number; y: number }> = [];
     for (const eye of [landmarks.leftEye, landmarks.rightEye]) {
-      const padding = 6;
+      const padding = 4;
       const x = eye.x1 * scaleX - padding;
-      const y = Math.min(eye.y1, eye.y2) * scaleY - padding;
+      const y = eye.y1 * scaleY - padding;
       const w = (eye.x2 - eye.x1) * scaleX + padding * 2;
-      const h = Math.abs(eye.y2 - eye.y1) * scaleY + padding * 2;
+      const h = (eye.y2 - eye.y1) * scaleY + padding * 2;
       ctx.strokeRect(x, y, w, h);
+      eyeCenters.push({
+        x: ((eye.x1 + eye.x2) / 2) * scaleX,
+        y: ((eye.y1 + eye.y2) / 2) * scaleY,
+      });
+    }
+
+    if (eyeCenters.length === 2) {
+      ctx.strokeStyle = '#00aa55';
+      ctx.beginPath();
+      ctx.moveTo(eyeCenters[0].x, eyeCenters[0].y);
+      ctx.lineTo(eyeCenters[1].x, eyeCenters[1].y);
+      ctx.stroke();
     }
   }
 

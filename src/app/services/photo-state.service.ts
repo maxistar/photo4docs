@@ -1,6 +1,7 @@
 // src/app/services/photo-state.service.ts
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { DOCUMENT_TYPES } from './document-types';
 
 export type PreprocessingStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -8,11 +9,35 @@ export interface EyeCoordinates {
   x1: number; y1: number; x2: number; y2: number;
 }
 
+export interface PointCoordinates {
+  x: number;
+  y: number;
+}
+
+export interface ImageBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface FaceLandmarks {
-  faceBox: { x: number; y: number; width: number; height: number };
+  faceBox: ImageBox;
+  headBox?: ImageBox;
+  chin?: PointCoordinates;
+  browCenter?: PointCoordinates;
   leftEye: EyeCoordinates;
   rightEye: EyeCoordinates;
   faceCount: number;
+}
+
+export interface CropGuide {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  label: string;
+  orientation: 'horizontal' | 'vertical' | 'box';
 }
 
 export interface DocumentType {
@@ -20,11 +45,19 @@ export interface DocumentType {
   name: string;
   widthMm: number;
   heightMm: number;
-  // Add specific rules like head height percentage, eye line if needed for validation/guides
   description?: string;
-  headHeightPercentMin?: number; // Example: 70
-  headHeightPercentMax?: number; // Example: 80
-  eyeLineFromTopPercent?: number; // Example: 50-60 (might need min/max)
+  topOffsetMinMm?: number;
+  topOffsetMaxMm?: number;
+  headHeightMinMm?: number;
+  headHeightMaxMm?: number;
+  headWidthMinMm?: number;
+  headWidthMaxMm?: number;
+  eyesLineMinMm?: number;
+  eyesLineMaxMm?: number;
+  colorMode?: 'color' | 'bw' | 'any';
+  paperType?: 'glossy' | 'matte' | 'any';
+  backgroundColor?: string;
+  decoration?: 'leftcorner' | 'rightcorner' | 'blurredoval';
 }
 
 export interface PaperSize {
@@ -44,19 +77,13 @@ export class PhotoStateService {
   // --- Configuration Data ---
   readonly DPI = 300; // Dots Per Inch - Standard for printing
 
-  readonly documentTypes: DocumentType[] = [
-    { id: 'passport_eu', name: 'Passport/Schengen Visa (EU Standard)', widthMm: 35, heightMm: 45 },
-    { id: 'visa_usa', name: 'USA Visa', widthMm: 51, heightMm: 51 }, // Often 2x2 inches
-    { id: 'passport_india', name: 'Indian Passport', widthMm: 51, heightMm: 51 },
-    // Add more types
-  ];
+  readonly documentTypes: DocumentType[] = DOCUMENT_TYPES;
 
   readonly paperSizes: PaperSize[] = [
-    { id: 'photo_9x13', name: 'Photo 9x13 cm', widthMm: 127, heightMm: 89, orientation: 'landscape' }, // Approx 5x3.5 inches
-    { id: 'photo_10x15', name: 'Photo 10x15 cm', widthMm: 152, heightMm: 102, orientation: 'landscape' }, // Approx 6x4 inches
+    { id: 'photo_9x13', name: 'Photo 9x13 cm', widthMm: 127, heightMm: 89, orientation: 'landscape' },
+    { id: 'photo_10x15', name: 'Photo 10x15 cm', widthMm: 152, heightMm: 102, orientation: 'landscape' },
     { id: 'a4', name: 'A4', widthMm: 210, heightMm: 297, orientation: 'portrait' },
-    { id: 'letter', name: 'Letter', widthMm: 215.9, heightMm: 279.4, orientation: 'portrait' }, // 8.5x11 inches
-    // Add more sizes
+    { id: 'letter', name: 'Letter', widthMm: 215.9, heightMm: 279.4, orientation: 'portrait' },
   ];
 
   readonly outputFormats: OutputFormat[] = ['jpg', 'png', 'pdf'];
@@ -73,6 +100,8 @@ export class PhotoStateService {
   preprocessingStatus: BehaviorSubject<PreprocessingStatus> = new BehaviorSubject<PreprocessingStatus>('idle');
   preprocessingError: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
   faceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
+  alignedFaceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
+  alignedImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
   processedImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
   layoutPreviewUrl: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
 
@@ -89,28 +118,54 @@ export class PhotoStateService {
 
   getDocumentPixelDimensions(docType: DocumentType): { width: number; height: number } {
     return {
-        width: this.mmToPixels(docType.widthMm),
-        height: this.mmToPixels(docType.heightMm)
+      width: this.mmToPixels(docType.widthMm),
+      height: this.mmToPixels(docType.heightMm)
     };
   }
 
-    getPaperPixelDimensions(paperSize: PaperSize): { width: number; height: number } {
+  getPaperPixelDimensions(paperSize: PaperSize): { width: number; height: number } {
     return {
-        width: this.mmToPixels(paperSize.widthMm),
-        height: this.mmToPixels(paperSize.heightMm)
+      width: this.mmToPixels(paperSize.widthMm),
+      height: this.mmToPixels(paperSize.heightMm)
     };
+  }
+
+  setAlignedImage(url: string | null): void {
+    this.replaceObjectUrl(this.alignedImage, url);
+  }
+
+  setProcessedImage(url: string | null): void {
+    this.replaceObjectUrl(this.processedImage, url);
+  }
+
+  setCroppedPhotoDataUrl(url: string | null): void {
+    this.replaceObjectUrl(this.croppedPhotoDataUrl, url);
+  }
+
+  setLayoutPreviewUrl(url: string | null): void {
+    this.replaceObjectUrl(this.layoutPreviewUrl, url);
   }
 
   resetState() {
     this.originalImage.next(null);
-    this.croppedPhotoDataUrl.next(null);
+    this.setCroppedPhotoDataUrl(null);
     this.selectedDocumentType.next(null);
     this.selectedPaperSize.next(null);
     this.selectedOutputFormat.next('jpg');
     this.preprocessingStatus.next('idle');
     this.preprocessingError.next(null);
     this.faceLandmarks.next(null);
-    this.processedImage.next(null);
-    this.layoutPreviewUrl.next(null);
+    this.alignedFaceLandmarks.next(null);
+    this.setAlignedImage(null);
+    this.setProcessedImage(null);
+    this.setLayoutPreviewUrl(null);
+  }
+
+  private replaceObjectUrl(subject: BehaviorSubject<string | null>, nextUrl: string | null): void {
+    const previous = subject.getValue();
+    if (previous && previous !== nextUrl && previous.startsWith('blob:')) {
+      URL.revokeObjectURL(previous);
+    }
+    subject.next(nextUrl);
   }
 }

@@ -1,7 +1,15 @@
 import { Injectable, NgZone } from '@angular/core';
 import * as faceapi from 'face-api.js';
 import { removeBackground } from '@imgly/background-removal';
-import { PhotoStateService, FaceLandmarks } from './photo-state.service';
+import { EyeCoordinates, FaceLandmarks, ImageBox, PhotoStateService, PointCoordinates } from './photo-state.service';
+
+interface AlignmentResult {
+  canvas: HTMLCanvasElement;
+  angle: number;
+  origWidth: number;
+  origHeight: number;
+}
+
 
 @Injectable({ providedIn: 'root' })
 export class ImagePreprocessingService {
@@ -44,12 +52,22 @@ export class ImagePreprocessingService {
 
     const box = largest.detection.box;
     const pts = largest.landmarks.positions;
+    const eyeBox = (indices: number[]) => {
+      const eyePoints = indices.map(index => pts[index]);
+      return {
+        x1: Math.min(...eyePoints.map(point => point.x)),
+        y1: Math.min(...eyePoints.map(point => point.y)),
+        x2: Math.max(...eyePoints.map(point => point.x)),
+        y2: Math.max(...eyePoints.map(point => point.y)),
+      };
+    };
 
-    // 68-point model: left eye outer=36, inner=39; right eye inner=42, outer=45
     return {
       faceBox: { x: box.x, y: box.y, width: box.width, height: box.height },
-      leftEye: { x1: pts[36].x, y1: pts[36].y, x2: pts[39].x, y2: pts[39].y },
-      rightEye: { x1: pts[42].x, y1: pts[42].y, x2: pts[45].x, y2: pts[45].y },
+      chin: { x: pts[8].x, y: pts[8].y },
+      browCenter: { x: (pts[19].x + pts[24].x) / 2, y: (pts[19].y + pts[24].y) / 2 },
+      leftEye: eyeBox([36, 37, 38, 39, 40, 41]),
+      rightEye: eyeBox([42, 43, 44, 45, 46, 47]),
       faceCount: detections.length,
     };
   }
@@ -91,93 +109,169 @@ export class ImagePreprocessingService {
 
   // --- Face alignment (rotation) ---
 
-  // Rotates `canvas` so the eye line is horizontal.
-  // Returns the rotated canvas (diagonal×diagonal) and the angle used.
-  private alignFace(
-    canvas: HTMLCanvasElement,
-    landmarks: FaceLandmarks
-  ): { canvas: HTMLCanvasElement; angle: number } {
-    // Eye centres as midpoints of corner coordinates
+  private alignFace(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): AlignmentResult {
     const leftCx = (landmarks.leftEye.x1 + landmarks.leftEye.x2) / 2;
     const leftCy = (landmarks.leftEye.y1 + landmarks.leftEye.y2) / 2;
     const rightCx = (landmarks.rightEye.x1 + landmarks.rightEye.x2) / 2;
     const rightCy = (landmarks.rightEye.y1 + landmarks.rightEye.y2) / 2;
 
     const angle = Math.atan2(rightCy - leftCy, rightCx - leftCx);
-
-    // Skip rotation if already level within 0.5°
-    if (Math.abs(angle) < 0.5 * Math.PI / 180) {
-      return { canvas, angle: 0 };
-    }
-
     const w = canvas.width;
     const h = canvas.height;
-    // Diagonal is the minimum canvas size that fits the entire rotated image
-    const diagonal = Math.ceil(Math.sqrt(w * w + h * h));
 
+    if (Math.abs(angle) < 0.5 * Math.PI / 180) {
+      return { canvas, angle: 0, origWidth: w, origHeight: h };
+    }
+
+    const diagonal = Math.ceil(Math.sqrt(w * w + h * h));
     const rotated = document.createElement('canvas');
     rotated.width = diagonal;
     rotated.height = diagonal;
 
     const ctx = rotated.getContext('2d')!;
-    // Rotate around canvas centre; preserve alpha (default transparent background)
     ctx.translate(diagonal / 2, diagonal / 2);
     ctx.rotate(-angle);
     ctx.translate(-w / 2, -h / 2);
     ctx.drawImage(canvas, 0, 0);
 
-    return { canvas: rotated, angle };
+    return { canvas: rotated, angle, origWidth: w, origHeight: h };
+  }
+
+  private transformLandmarks(landmarks: FaceLandmarks, alignment: AlignmentResult): FaceLandmarks {
+    if (alignment.angle === 0) {
+      return {
+        ...landmarks,
+        faceBox: { ...landmarks.faceBox },
+        headBox: landmarks.headBox ? { ...landmarks.headBox } : undefined,
+        chin: landmarks.chin ? { ...landmarks.chin } : undefined,
+        browCenter: landmarks.browCenter ? { ...landmarks.browCenter } : undefined,
+        leftEye: { ...landmarks.leftEye },
+        rightEye: { ...landmarks.rightEye }
+      };
+    }
+
+    const face = landmarks.faceBox;
+    const corners = [
+      { x: face.x, y: face.y },
+      { x: face.x + face.width, y: face.y },
+      { x: face.x, y: face.y + face.height },
+      { x: face.x + face.width, y: face.y + face.height },
+    ].map(point => this.transformPoint(point, alignment));
+
+    const minX = Math.min(...corners.map(point => point.x));
+    const minY = Math.min(...corners.map(point => point.y));
+    const maxX = Math.max(...corners.map(point => point.x));
+    const maxY = Math.max(...corners.map(point => point.y));
+
+    return {
+      faceBox: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      chin: landmarks.chin ? this.transformPoint(landmarks.chin, alignment) : undefined,
+      browCenter: landmarks.browCenter ? this.transformPoint(landmarks.browCenter, alignment) : undefined,
+      leftEye: this.transformEye(landmarks.leftEye, alignment),
+      rightEye: this.transformEye(landmarks.rightEye, alignment),
+      faceCount: landmarks.faceCount,
+    };
+  }
+
+  private transformEye(eye: EyeCoordinates, alignment: AlignmentResult): EyeCoordinates {
+    const p1 = this.transformPoint({ x: eye.x1, y: eye.y1 }, alignment);
+    const p2 = this.transformPoint({ x: eye.x2, y: eye.y2 }, alignment);
+    return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+  }
+
+  private transformPoint(point: PointCoordinates, alignment: AlignmentResult): PointCoordinates {
+    const dx = point.x - alignment.origWidth / 2;
+    const dy = point.y - alignment.origHeight / 2;
+    const cos = Math.cos(-alignment.angle);
+    const sin = Math.sin(-alignment.angle);
+    return {
+      x: dx * cos - dy * sin + alignment.canvas.width / 2,
+      y: dx * sin + dy * cos + alignment.canvas.height / 2,
+    };
+  }
+
+
+  private estimateHeadBox(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): FaceLandmarks {
+    const face = landmarks.faceBox;
+    const chin = landmarks.chin ?? { x: face.x + face.width / 2, y: face.y + face.height };
+    const centerX = face.x + face.width / 2;
+    const bandHalfWidth = Math.max(face.width * 0.8, 40);
+    const scanLeft = Math.max(0, Math.floor(centerX - bandHalfWidth));
+    const scanRight = Math.min(canvas.width, Math.ceil(centerX + bandHalfWidth));
+    const scanTop = 0;
+    const scanBottom = Math.max(1, Math.min(canvas.height, Math.ceil(chin.y)));
+    const scanWidth = Math.max(1, scanRight - scanLeft);
+    const scanHeight = Math.max(1, scanBottom - scanTop);
+    const ctx = canvas.getContext('2d');
+
+    let headTop = this.estimateHeadTopFromLandmarks(landmarks);
+    let minPersonX = face.x;
+    let maxPersonX = face.x + face.width;
+
+    if (ctx) {
+      const data = ctx.getImageData(scanLeft, scanTop, scanWidth, scanHeight).data;
+      const rowThreshold = Math.max(3, Math.floor(scanWidth * 0.02));
+      let foundTop: number | null = null;
+      let foundMinX = scanRight;
+      let foundMaxX = scanLeft;
+
+      for (let y = 0; y < scanHeight; y++) {
+        let rowAlphaCount = 0;
+        for (let x = 0; x < scanWidth; x++) {
+          const alpha = data[(y * scanWidth + x) * 4 + 3];
+          if (alpha > 12) {
+            rowAlphaCount++;
+            foundMinX = Math.min(foundMinX, scanLeft + x);
+            foundMaxX = Math.max(foundMaxX, scanLeft + x);
+          }
+        }
+        if (foundTop === null && rowAlphaCount >= rowThreshold) {
+          foundTop = scanTop + y;
+        }
+      }
+
+      if (foundTop !== null && foundTop < chin.y) {
+        headTop = foundTop;
+        minPersonX = Math.min(foundMinX, face.x);
+        maxPersonX = Math.max(foundMaxX, face.x + face.width);
+      }
+    }
+
+    headTop = Math.max(0, Math.min(headTop, chin.y - 1));
+    const headHeight = Math.max(1, chin.y - headTop);
+    const headWidth = Math.max(face.width, maxPersonX - minPersonX);
+    const headBox: ImageBox = {
+      x: centerX - headWidth / 2,
+      y: headTop,
+      width: headWidth,
+      height: headHeight,
+    };
+
+    return { ...landmarks, headBox };
+  }
+
+  private estimateHeadTopFromLandmarks(landmarks: FaceLandmarks): number {
+    const face = landmarks.faceBox;
+    const chin = landmarks.chin ?? { x: face.x + face.width / 2, y: face.y + face.height };
+    const brow = landmarks.browCenter ?? { x: face.x + face.width / 2, y: face.y + face.height * 0.28 };
+    return chin.y - (chin.y - brow.y) * 1.45;
   }
 
   // --- Face crop ---
 
-  // Crops `canvas` to a square centred on the face so face height ≈ 50% of output.
-  // `angle` and `origWidth/origHeight` are used to map the face centre from original
-  // image space into the (potentially rotated) canvas space.
-  private cropToFace(
-    canvas: HTMLCanvasElement,
-    landmarks: FaceLandmarks,
-    angle: number,
-    origWidth: number,
-    origHeight: number
-  ): HTMLCanvasElement {
-    // Face centre in original image space
-    const origCx = landmarks.faceBox.x + landmarks.faceBox.width / 2;
-    const origCy = landmarks.faceBox.y + landmarks.faceBox.height / 2;
+  private cropToFace(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): HTMLCanvasElement {
+    const head = landmarks.headBox ?? landmarks.faceBox;
+    const faceCx = head.x + head.width / 2;
+    const faceCy = head.y + head.height / 2;
+    const side = Math.max(Math.round(head.height * 1.45), 400);
 
-    // Map to rotated canvas space
-    let faceCx: number;
-    let faceCy: number;
-
-    if (angle === 0) {
-      faceCx = origCx;
-      faceCy = origCy;
-    } else {
-      // The rotated canvas is diagonal×diagonal, original image centred at (diagonal/2, diagonal/2).
-      // A point (px, py) in original space maps to canvas space by:
-      //   rotate( (px - origW/2, py - origH/2), -angle ) + (diagonal/2, diagonal/2)
-      const diagonal = canvas.width; // canvas is square after alignFace
-      const dx = origCx - origWidth / 2;
-      const dy = origCy - origHeight / 2;
-      const cos = Math.cos(-angle);
-      const sin = Math.sin(-angle);
-      faceCx = dx * cos - dy * sin + diagonal / 2;
-      faceCy = dx * sin + dy * cos + diagonal / 2;
-    }
-
-    // Output side: face height × 2 so face is 50% of output height; minimum 400 px
-    const side = Math.max(Math.round(landmarks.faceBox.height * 2), 400);
-
-    // Top-left of crop rect, clamped so it stays within canvas bounds
     let cropX = Math.round(faceCx - side / 2);
     let cropY = Math.round(faceCy - side / 2);
     cropX = Math.max(0, Math.min(cropX, canvas.width - side));
     cropY = Math.max(0, Math.min(cropY, canvas.height - side));
 
-    // Source dimensions clamped in case canvas is smaller than the desired side
     const srcW = Math.min(side, canvas.width);
     const srcH = Math.min(side, canvas.height);
-
     const output = document.createElement('canvas');
     output.width = side;
     output.height = side;
@@ -197,50 +291,55 @@ export class ImagePreprocessingService {
       this.photoState.preprocessingStatus.next('running');
       this.photoState.preprocessingError.next(null);
       this.photoState.faceLandmarks.next(null);
-      this.photoState.processedImage.next(null);
+      this.photoState.alignedFaceLandmarks.next(null);
+      this.photoState.setAlignedImage(null);
+      this.photoState.setProcessedImage(null);
     });
 
     let landmarks: FaceLandmarks | null = null;
+    let alignedLandmarks: FaceLandmarks | null = null;
+    let alignedUrl: string | null = null;
     let finalUrl: string | null = null;
+    let bgUrl: string | null = null;
     let errorMessage: string | null = null;
 
     await this.ngZone.runOutsideAngular(async () => {
       try {
         await this.loadModels();
 
-        // Stage 1: face detection + background removal (concurrent)
-        let bgUrl: string;
         [landmarks, bgUrl] = await Promise.all([
           this.detectFace(imgElement),
           this.removeBg(file),
         ]);
 
-        // Stage 2: load background-removed result into a canvas
         const bgImg = await this.loadImage(bgUrl);
         const bgCanvas = this.imageToCanvas(bgImg);
+        const alignment = this.alignFace(bgCanvas, landmarks);
+        alignedLandmarks = this.estimateHeadBox(alignment.canvas, this.transformLandmarks(landmarks, alignment));
+        alignedUrl = await this.canvasToUrl(alignment.canvas);
 
-        // Stage 3: rotate so eyes are level
-        const { canvas: alignedCanvas, angle } = this.alignFace(bgCanvas, landmarks);
-
-        // Stage 4: crop so face height is ~50% of output
-        const croppedCanvas = this.cropToFace(
-          alignedCanvas, landmarks, angle, bgCanvas.width, bgCanvas.height
-        );
-
-        // Stage 5: serialise to object URL for display
+        const croppedCanvas = this.cropToFace(alignment.canvas, alignedLandmarks);
         finalUrl = await this.canvasToUrl(croppedCanvas);
       } catch (err: any) {
         errorMessage = err?.message ?? 'Preprocessing failed. Please try a different photo.';
+      } finally {
+        if (bgUrl?.startsWith('blob:')) {
+          URL.revokeObjectURL(bgUrl);
+        }
       }
     });
 
     this.ngZone.run(() => {
-      if (errorMessage || !landmarks || !finalUrl) {
+      if (errorMessage || !landmarks || !alignedLandmarks || !alignedUrl || !finalUrl) {
+        if (alignedUrl?.startsWith('blob:')) URL.revokeObjectURL(alignedUrl);
+        if (finalUrl?.startsWith('blob:')) URL.revokeObjectURL(finalUrl);
         this.photoState.preprocessingError.next(errorMessage ?? 'Unknown error');
         this.photoState.preprocessingStatus.next('error');
       } else {
         this.photoState.faceLandmarks.next(landmarks);
-        this.photoState.processedImage.next(finalUrl);
+        this.photoState.alignedFaceLandmarks.next(alignedLandmarks);
+        this.photoState.setAlignedImage(alignedUrl);
+        this.photoState.setProcessedImage(finalUrl);
         this.photoState.preprocessingStatus.next('done');
       }
     });

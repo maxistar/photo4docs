@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
-import { DocumentType, PaperSize } from './photo-state.service';
+import { DocumentType, FaceLandmarks, PaperSize } from './photo-state.service';
+import { CropResult, PhotoCropService } from './photo-crop.service';
 
 const PRINT_DPI = 300;
 
@@ -7,31 +8,31 @@ const PRINT_DPI = 300;
 export class PhotoDownloadService {
   private lastJpegUrl: string | null = null;
 
+  constructor(private photoCropService: PhotoCropService) {}
+
   async renderPhotoJpeg(
-    processedImageUrl: string,
+    sourceImageUrl: string,
     docType: DocumentType,
-    paper: PaperSize
-  ): Promise<{ url: string; qualityWarning: boolean }> {
-    const { canvas: layoutCanvas, qualityWarning } = await this.renderLayoutCanvas(processedImageUrl, docType, paper);
-    const url = await new Promise<string>((resolve, reject) => {
-      layoutCanvas.toBlob(blob => {
-        if (!blob) { reject(new Error('toBlob failed')); return; }
-        resolve(URL.createObjectURL(blob));
-      }, 'image/jpeg', 0.95);
-    });
+    landmarks: FaceLandmarks | null = null
+  ): Promise<{ url: string; qualityWarning: boolean; result: CropResult }> {
+    const result = await this.renderPhotoCanvas(sourceImageUrl, docType, landmarks, true, 'image/jpeg', 0.95);
+    if (!result.url) throw new Error('JPEG render did not create a URL');
+
     if (this.lastJpegUrl) {
       URL.revokeObjectURL(this.lastJpegUrl);
     }
-    this.lastJpegUrl = url;
-    return { url, qualityWarning };
+    this.lastJpegUrl = result.url;
+    return { url: result.url, qualityWarning: result.qualityWarning, result };
   }
 
   async renderLayoutPdf(
-    processedImageUrl: string,
+    sourceImageUrl: string,
     docType: DocumentType,
-    paper: PaperSize
+    paper: PaperSize,
+    landmarks: FaceLandmarks | null = null
   ): Promise<void> {
-    const { canvas: paperCanvas } = await this.renderLayoutCanvas(processedImageUrl, docType, paper);
+    const photoResult = await this.renderPhotoCanvas(sourceImageUrl, docType, landmarks, false, 'image/png');
+    const paperCanvas = this.renderLayoutCanvas(photoResult.canvas, docType, paper);
     const dataUrl = paperCanvas.toDataURL('image/png');
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({
@@ -43,13 +44,35 @@ export class PhotoDownloadService {
     doc.save('photo-layout.pdf');
   }
 
-  private async renderLayoutCanvas(
-    processedImageUrl: string,
+  async getQualityInfo(
+    sourceImageUrl: string,
     docType: DocumentType,
-    paper: PaperSize
-  ): Promise<{ canvas: HTMLCanvasElement; qualityWarning: boolean }> {
-    const { canvas: photoCanvas, qualityWarning } = await this.renderPhotoCanvas(processedImageUrl, docType);
+    landmarks: FaceLandmarks | null = null
+  ): Promise<CropResult> {
+    return this.renderPhotoCanvas(sourceImageUrl, docType, landmarks, false, 'image/png');
+  }
 
+  private async renderPhotoCanvas(
+    sourceImageUrl: string,
+    docType: DocumentType,
+    landmarks: FaceLandmarks | null,
+    createUrl: boolean,
+    mimeType: string,
+    quality?: number
+  ): Promise<CropResult> {
+    const targetW = Math.round(docType.widthMm / 25.4 * PRINT_DPI);
+    const targetH = Math.round(docType.heightMm / 25.4 * PRINT_DPI);
+    return this.photoCropService.renderDocumentCrop(sourceImageUrl, docType, landmarks, {
+      targetWidthPx: targetW,
+      targetHeightPx: targetH,
+      mimeType,
+      quality,
+      createUrl,
+      fillBackground: docType.backgroundColor ?? '#ffffff'
+    });
+  }
+
+  private renderLayoutCanvas(photoCanvas: HTMLCanvasElement, docType: DocumentType, paper: PaperSize): HTMLCanvasElement {
     const cols = Math.floor(paper.widthMm / docType.widthMm);
     const rows = Math.floor(paper.heightMm / docType.heightMm);
     const marginXmm = (paper.widthMm - cols * docType.widthMm) / 2;
@@ -57,8 +80,6 @@ export class PhotoDownloadService {
 
     const paperW = Math.round(paper.widthMm / 25.4 * PRINT_DPI);
     const paperH = Math.round(paper.heightMm / 25.4 * PRINT_DPI);
-    const slotW = photoCanvas.width;
-    const slotH = photoCanvas.height;
     const marginX = Math.round(marginXmm / 25.4 * PRINT_DPI);
     const marginY = Math.round(marginYmm / 25.4 * PRINT_DPI);
 
@@ -73,56 +94,16 @@ export class PhotoDownloadService {
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        ctx.drawImage(photoCanvas, marginX + col * slotW, marginY + row * slotH, slotW, slotH);
+        ctx.drawImage(
+          photoCanvas,
+          marginX + col * photoCanvas.width,
+          marginY + row * photoCanvas.height,
+          photoCanvas.width,
+          photoCanvas.height
+        );
       }
     }
 
-    return { canvas, qualityWarning };
-  }
-
-  private async renderPhotoCanvas(
-    processedImageUrl: string,
-    docType: DocumentType
-  ): Promise<{ canvas: HTMLCanvasElement; qualityWarning: boolean }> {
-    const img = await this.loadImage(processedImageUrl);
-    const targetW = Math.round(docType.widthMm / 25.4 * PRINT_DPI);
-    const targetH = Math.round(docType.heightMm / 25.4 * PRINT_DPI);
-    const qualityWarning = Math.min(img.naturalWidth, img.naturalHeight) < Math.max(targetW, targetH);
-
-    const side = img.naturalWidth; // processedImage is always square
-    let srcX = 0, srcY = 0, srcW = side, srcH = side;
-
-    if (docType.widthMm === docType.heightMm) {
-      // Square — no crop
-    } else if (docType.widthMm < docType.heightMm) {
-      // Portrait: reduce width
-      srcW = Math.round(side * (docType.widthMm / docType.heightMm));
-      srcX = Math.round((side - srcW) / 2);
-    } else {
-      // Landscape: reduce height
-      srcH = Math.round(side * (docType.heightMm / docType.widthMm));
-      srcY = Math.round((side - srcH) / 2);
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, targetW, targetH);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, targetW, targetH);
-
-    return { canvas, qualityWarning };
-  }
-
-  private loadImage(src: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = src;
-    });
+    return canvas;
   }
 }

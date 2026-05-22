@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
-import { PhotoStateService, DocumentType, PaperSize } from '../../services/photo-state.service';
+import { PhotoStateService, DocumentType, FaceLandmarks, PaperSize } from '../../services/photo-state.service';
 import { PhotoDownloadService } from '../../services/photo-download.service';
+import { PhotoCropService } from '../../services/photo-crop.service';
 
 @Component({
   selector: 'app-step4-download',
@@ -15,47 +16,45 @@ export class Step4DownloadComponent implements OnInit {
   pdfLoading = false;
   previewUrl: string | null = null;
 
-  private processedImageUrl: string | null = null;
+  private sourceImageUrl: string | null = null;
+  private landmarks: FaceLandmarks | null = null;
   private docType: DocumentType | null = null;
   private paper: PaperSize | null = null;
 
   constructor(
     public photoState: PhotoStateService,
-    private photoDownloadService: PhotoDownloadService
+    private photoDownloadService: PhotoDownloadService,
+    private photoCropService: PhotoCropService
   ) {}
 
   ngOnInit(): void {
-    this.processedImageUrl = this.photoState.processedImage.getValue();
     this.docType = this.photoState.selectedDocumentType.getValue();
     this.paper = this.photoState.selectedPaperSize.getValue();
     this.previewUrl = this.photoState.layoutPreviewUrl.getValue();
 
-    if (this.processedImageUrl && this.docType) {
-      const targetW = Math.round(this.docType.widthMm / 25.4 * 300);
-      const targetH = Math.round(this.docType.heightMm / 25.4 * 300);
-      const img = new Image();
-      img.onload = () => {
-        const minSrc = Math.min(img.naturalWidth, img.naturalHeight);
-        const maxTarget = Math.max(targetW, targetH);
-        if (minSrc < maxTarget) {
-          this.qualityWarning = true;
-          this.sourceSize = `${img.naturalWidth}×${img.naturalHeight}px`;
-          this.requiredSize = `${targetW}×${targetH}px`;
-        }
-      };
-      img.src = this.processedImageUrl;
+    const source = this.resolveCropSource();
+    this.sourceImageUrl = source.url;
+    this.landmarks = source.landmarks;
+
+    if (this.sourceImageUrl && this.docType) {
+      this.photoDownloadService.getQualityInfo(this.sourceImageUrl, this.docType, this.landmarks)
+        .then(result => {
+          this.qualityWarning = result.qualityWarning || result.warnings.some(warning => warning.type === 'clamped');
+          this.sourceSize = `${result.sourceSize.width}x${result.sourceSize.height}px`;
+          this.requiredSize = `${result.requiredSize.width}x${result.requiredSize.height}px`;
+        });
     }
   }
 
   hasSource(): boolean {
-    return !!(this.processedImageUrl && this.docType && this.paper);
+    return !!(this.sourceImageUrl && this.docType && this.paper);
   }
 
   async onDownloadJpeg(): Promise<void> {
-    if (!this.processedImageUrl || !this.docType || !this.paper) return;
+    if (!this.sourceImageUrl || !this.docType) return;
     this.jpegLoading = true;
     try {
-      const { url } = await this.photoDownloadService.renderPhotoJpeg(this.processedImageUrl, this.docType, this.paper);
+      const { url } = await this.photoDownloadService.renderPhotoJpeg(this.sourceImageUrl, this.docType, this.landmarks);
       const a = document.createElement('a');
       a.href = url;
       a.download = 'biometric-photo.jpg';
@@ -66,12 +65,24 @@ export class Step4DownloadComponent implements OnInit {
   }
 
   async onDownloadPdf(): Promise<void> {
-    if (!this.processedImageUrl || !this.docType || !this.paper) return;
+    if (!this.sourceImageUrl || !this.docType || !this.paper) return;
     this.pdfLoading = true;
     try {
-      await this.photoDownloadService.renderLayoutPdf(this.processedImageUrl, this.docType, this.paper);
+      await this.photoDownloadService.renderLayoutPdf(this.sourceImageUrl, this.docType, this.paper, this.landmarks);
     } finally {
       this.pdfLoading = false;
     }
+  }
+
+  private resolveCropSource(): { url: string | null; landmarks: FaceLandmarks | null } {
+    if (this.docType && this.photoCropService.hasPlacementRules(this.docType)) {
+      const alignedUrl = this.photoState.alignedImage.getValue();
+      const alignedLandmarks = this.photoState.alignedFaceLandmarks.getValue();
+      if (alignedUrl && alignedLandmarks) {
+        return { url: alignedUrl, landmarks: alignedLandmarks };
+      }
+    }
+
+    return { url: this.photoState.processedImage.getValue(), landmarks: null };
   }
 }
