@@ -1,0 +1,45 @@
+<div class="download-container">
+  <h2>Download Your Photos</h2>
+
+  <div *ngIf="!hasSource()" class="no-source-message">
+    <p>Please complete Steps 1–3 first to process your photo.</p>
+  </div>
+
+  <ng-container *ngIf="hasSource()">
+    <div *ngIf="qualityWarning" class="quality-warning">
+      Your photo may print soft — original resolution was {{ sourceSize }}, but {{ requiredSize }} is needed for 300 DPI. Consider re-shooting with a higher-resolution camera.
+    </div>
+
+    <div class="preview-section">
+      <img *ngIf="previewUrl" class="layout-preview" [src]="previewUrl" alt="Layout preview" />
+    </div>
+
+    <div class="download-options">
+      <div class="download-option">
+        <div class="option-info">
+          <span class="option-title">Single Photo (JPEG)</span>
+          <span class="option-desc">
+            {{ photoState.selectedDocumentType.getValue()?.widthMm }}mm &times; {{ photoState.selectedDocumentType.getValue()?.heightMm }}mm &middot; 300 DPI
+          </span>
+        </div>
+        <button class="download-btn" (click)="onDownloadJpeg()" [disabled]="jpegLoading">
+          <span *ngIf="jpegLoading" class="spinner"></span>
+          <span>{{ jpegLoading ? 'Rendering…' : 'Download JPEG' }}</span>
+        </button>
+      </div>
+
+      <div class="download-option">
+        <div class="option-info">
+          <span class="option-title">Print Layout (PDF)</span>
+          <span class="option-desc">
+            {{ photoState.selectedPaperSize.getValue()?.name }} &middot; 300 DPI &middot; print at 100%
+          </span>
+        </div>
+        <button class="download-btn" (click)="onDownloadPdf()" [disabled]="pdfLoading">
+          <span *ngIf="pdfLoading" class="spinner"></span>
+          <span>{{ pdfLoading ? 'Generating…' : 'Download PDF' }}</span>
+        </button>
+      </div>
+    </div>
+  </ng-container>
+</div>

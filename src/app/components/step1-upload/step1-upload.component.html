@@ -1,0 +1,65 @@
+<div class="upload-container">
+  <!-- Hidden file input -->
+  <input
+    type="file"
+    id="fileInput"
+    accept="image/*"
+    (change)="onFileSelected($event)"
+    style="display: none;"
+  >
+
+  <!-- Upload button -->
+  <button
+    type="button"
+    class="upload-button"
+    (click)="triggerFileInput()"
+    [disabled]="status === 'running'"
+  >
+    <i class="material-icons">image</i>
+    <span>{{ status === 'running' ? 'Analysing…' : 'Select Image' }}</span>
+  </button>
+
+  <!-- Selected file name -->
+  <div *ngIf="fileName" class="file-info">
+    Selected: {{ fileName }}
+  </div>
+
+  <!-- Processing indicator -->
+  <div *ngIf="status === 'running'" class="status-indicator status-running">
+    <div class="spinner"></div>
+    <span>Analysing photo — detecting face &amp; removing background…</span>
+  </div>
+
+  <!-- Success indicator -->
+  <div *ngIf="status === 'done'" class="status-indicator status-success">
+    <i class="material-icons">check_circle</i>
+    <span>
+      Face detected
+      <ng-container *ngIf="faceLandmarks && faceLandmarks.faceCount > 1">
+        &nbsp;<span class="warning-badge">{{ faceLandmarks.faceCount }} faces found — using the largest</span>
+      </ng-container>
+    </span>
+  </div>
+
+  <!-- Error message -->
+  <div *ngIf="status === 'error' && errorMessage" class="status-indicator status-error">
+    <i class="material-icons">error</i>
+    <span>{{ errorMessage }}</span>
+  </div>
+
+  <!-- Image preview with eye overlay canvas -->
+  <div *ngIf="displayImage" class="image-preview">
+    <img
+      #previewImg
+      [src]="displayImage"
+      alt="Preview"
+      (load)="onPreviewLoaded()"
+    >
+    <!-- Overlay only shown while processing (original image coords); hidden once aligned+cropped result is displayed -->
+    <canvas
+      #previewCanvas
+      class="preview-canvas"
+      [style.display]="status === 'running' ? 'block' : 'none'"
+    ></canvas>
+  </div>
+</div>

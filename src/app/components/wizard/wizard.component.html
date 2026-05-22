@@ -1,0 +1,23 @@
+<!-- src/app/components/wizard/wizard.component.html -->
+<div class="wizard-container">
+    <h1>Biometric Photo Preparation Wizard</h1>
+    <div class="steps">
+      <span [class.active]="currentStep === 1">Step 1: Upload & Adjust</span> &gt;
+      <span [class.active]="currentStep === 2">Step 2: Select Document</span> &gt;
+      <span [class.active]="currentStep === 3">Step 3: Print Layout</span> &gt;
+      <span [class.active]="currentStep === 4">Step 4: Download</span>
+    </div>
+
+    <div class="step-content">
+      <app-step1-upload *ngIf="isStepVisible(1)"></app-step1-upload>
+      <app-step2-document-type *ngIf="isStepVisible(2)"></app-step2-document-type>
+      <app-step3-layout *ngIf="isStepVisible(3)"></app-step3-layout>
+      <app-step4-download *ngIf="isStepVisible(4)"></app-step4-download>
+    </div>
+
+    <div class="navigation">
+      <button (click)="prevStep()" [disabled]="currentStep === 1">Previous</button>
+      <button (click)="nextStep()" [disabled]="!canProceed() || currentStep === 4">Next</button>
+      <button (click)="resetWizard()" *ngIf="currentStep > 1" class="reset-button">Start Over</button>
+    </div>
+  </div>

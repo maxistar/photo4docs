@@ -1,0 +1,65 @@
+/* src/app/components/wizard/wizard.component.css */
+.wizard-container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+  }
+  
+  .steps {
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.1em;
+  }
+  
+  .steps span {
+    margin: 0 5px;
+    color: #aaa;
+  }
+  
+  .steps span.active {
+    font-weight: bold;
+    color: #333;
+  }
+  
+  .step-content {
+    margin-bottom: 20px;
+    min-height: 300px; /* Adjust as needed */
+  }
+  
+  .navigation {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+  }
+  
+  .navigation button {
+    padding: 10px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  
+  .navigation button:disabled {
+    background-color: #eee;
+    color: #999;
+    cursor: not-allowed;
+  }
+  
+  .navigation button:not(:disabled):hover {
+      background-color: #e0e0e0;
+  }
+  
+  .reset-button {
+      background-color: #f8d7da;
+      border-color: #f5c6cb;
+      color: #721c24;
+  }
+  .reset-button:hover {
+       background-color: #f1b0b7;
+  }
