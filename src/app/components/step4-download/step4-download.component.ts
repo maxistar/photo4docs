@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { PhotoStateService, DocumentType, FaceLandmarks, PaperSize } from '../../services/photo-state.service';
-import { PhotoDownloadService } from '../../services/photo-download.service';
+import { ExportFormat, PhotoDownloadService } from '../../services/photo-download.service';
 import { PhotoCropService } from '../../services/photo-crop.service';
 
 @Component({
@@ -12,9 +12,9 @@ export class Step4DownloadComponent implements OnInit {
   qualityWarning = false;
   sourceSize = '';
   requiredSize = '';
-  jpegLoading = false;
-  pdfLoading = false;
+  downloadLoading = false;
   previewUrl: string | null = null;
+  selectedFormat: ExportFormat = 'jpeg';
 
   private sourceImageUrl: string | null = null;
   private landmarks: FaceLandmarks | null = null;
@@ -50,28 +50,50 @@ export class Step4DownloadComponent implements OnInit {
     return !!(this.sourceImageUrl && this.docType && this.paper);
   }
 
-  async onDownloadJpeg(): Promise<void> {
-    if (!this.sourceImageUrl || !this.docType || !this.paper) return;
-    this.jpegLoading = true;
-    try {
-      const { url } = await this.photoDownloadService.renderLayoutJpeg(this.sourceImageUrl, this.docType, this.paper, this.landmarks);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'photo-layout.jpg';
-      a.click();
-    } finally {
-      this.jpegLoading = false;
+  get formatOptions(): Array<{ value: ExportFormat; label: string }> {
+    return ['jpeg', 'png', 'pdf'].map(format => ({ value: format as ExportFormat, label: format.toUpperCase() }));
+  }
+
+  selectFormat(format: ExportFormat): void {
+    if (this.formatOptions.some(option => option.value === format)) {
+      this.selectedFormat = format;
     }
   }
 
-  async onDownloadPdf(): Promise<void> {
+  getSelectedDescription(): string {
+    if (!this.docType || !this.paper) return '';
+
+    return `${this.paper.name} · ${this.paper.widthMm}mm × ${this.paper.heightMm}mm · ${this.paper.orientation} · 300 DPI · print at 100%`;
+  }
+
+  getDownloadLabel(): string {
+    return this.downloadLoading ? 'Rendering…' : `Download ${this.selectedFormat.toUpperCase()}`;
+  }
+
+  async onDownload(): Promise<void> {
     if (!this.sourceImageUrl || !this.docType || !this.paper) return;
-    this.pdfLoading = true;
+    this.downloadLoading = true;
     try {
-      await this.photoDownloadService.renderLayoutPdf(this.sourceImageUrl, this.docType, this.paper, this.landmarks);
+      if (this.selectedFormat === 'pdf') {
+        await this.photoDownloadService.renderLayoutPdf(this.sourceImageUrl, this.docType, this.paper, this.landmarks);
+        return;
+      }
+
+      const imageFormat = this.selectedFormat === 'png' ? 'png' : 'jpeg';
+      const { url } = await this.photoDownloadService.renderLayoutImage(this.sourceImageUrl, this.docType, this.paper, imageFormat, this.landmarks);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = this.getDownloadFilename(imageFormat);
+      a.click();
     } finally {
-      this.pdfLoading = false;
+      this.downloadLoading = false;
     }
+  }
+
+  private getDownloadFilename(format: 'jpeg' | 'png'): string {
+    const extension = format === 'jpeg' ? 'jpg' : 'png';
+    return `photo-layout.${extension}`;
   }
 
   private resolveCropSource(): { url: string | null; landmarks: FaceLandmarks | null } {
