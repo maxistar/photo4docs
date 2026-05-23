@@ -2,7 +2,7 @@
 
 h2 { color: #333; margin-bottom: 1.5rem; text-align: center; font-size: 1.75rem; }
 
-.preview-section { display: flex; justify-content: center; margin-bottom: 2rem; }
+.preview-section { display: flex; justify-content: center; margin: 1.5rem 0 2rem; }
 
 .layout-preview { max-width: 360px; width: 100%; height: auto; max-height: 520px; object-fit: contain; border: 1px solid #ddd; border-radius: 2px; background: #fff; }
 

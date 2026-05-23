@@ -1,94 +1,87 @@
 <div class="paper-size-container">
   <h2>Select Paper Size</h2>
 
-  <div class="step3-layout">
-    <div class="details-panel">
-      <div class="form-group">
-        <label for="paperSize">Paper Size:</label>
-        <div class="select-wrapper">
-          <select
-            id="paperSize"
-            class="paper-size-select"
-            (change)="onPaperSizeChange($event)"
-            [value]="selectedPaperSize?.id"
-          >
-            <option *ngFor="let paper of paperSizes"
-                    [value]="paper.id"
-                    [selected]="selectedPaperSize?.id === paper.id">
-              {{ paper.name }} ({{ paper.widthMm }}mm × {{ paper.heightMm }}mm)
-            </option>
-          </select>
-          <i class="material-icons">arrow_drop_down</i>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <span class="field-label">Orientation:</span>
-        <div class="orientation-control" role="radiogroup" aria-label="Paper orientation">
-          <button
-            type="button"
-            class="orientation-option"
-            [class.active]="selectedOrientation === 'portrait'"
-            [attr.aria-checked]="selectedOrientation === 'portrait'"
-            role="radio"
-            (click)="onOrientationChange('portrait')"
-          >
-            Portrait
-          </button>
-          <button
-            type="button"
-            class="orientation-option"
-            [class.active]="selectedOrientation === 'landscape'"
-            [attr.aria-checked]="selectedOrientation === 'landscape'"
-            role="radio"
-            (click)="onOrientationChange('landscape')"
-          >
-            Landscape
-          </button>
-        </div>
-      </div>
-
-      <div *ngIf="selectedLayoutPaperSize" class="paper-details">
-        <h3>Selected Paper Details:</h3>
-        <p><strong>Name:</strong> {{ selectedLayoutPaperSize.name }}</p>
-        <p><strong>Dimensions:</strong> {{ selectedLayoutPaperSize.widthMm }}mm × {{ selectedLayoutPaperSize.heightMm }}mm</p>
-        <p><strong>Orientation:</strong> {{ selectedLayoutPaperSize.orientation | titlecase }}</p>
-      </div>
-    </div>
-
-    <div class="preview-panel">
-      <div *ngIf="previewLoading" class="spinner"></div>
-
-      <ng-container *ngIf="!previewLoading">
-        <img
-          *ngIf="previewUrl && gridCols > 0"
-          class="layout-preview"
-          [src]="previewUrl"
-          alt="Layout preview"
-        />
-
-        <div *ngIf="previewUrl === ''" class="preview-placeholder">
-          <span>Photo too large for this paper</span>
-        </div>
-
-        <div *ngIf="previewUrl === null" class="preview-placeholder">
-          <span>Complete Step 2 first</span>
-        </div>
-      </ng-container>
-
-      <p
-        *ngIf="!previewLoading && gridCols > 0 && gridRows > 0"
-        class="grid-label"
+  <!-- Selectors -->
+  <div class="form-group">
+    <label for="paperSize">Paper Size:</label>
+    <div class="select-wrapper">
+      <select
+        id="paperSize"
+        class="paper-size-select"
+        (change)="onPaperSizeChange($event)"
+        [value]="selectedPaperSize?.id"
       >
-        {{ gridCols }} × {{ gridRows }} — {{ gridCols * gridRows }} photos
-      </p>
-
-      <p
-        *ngIf="!previewLoading && previewUrl === ''"
-        class="grid-label"
-      >
-        0 photos fit on this paper
-      </p>
+        <option *ngFor="let paper of paperSizes"
+                [value]="paper.id"
+                [selected]="selectedPaperSize?.id === paper.id">
+          {{ paper.name }} ({{ paper.widthMm }}mm × {{ paper.heightMm }}mm)
+        </option>
+      </select>
+      <i class="material-icons">arrow_drop_down</i>
     </div>
+  </div>
+
+  <div class="form-group">
+    <span class="field-label">Orientation:</span>
+    <div class="orientation-control" role="radiogroup" aria-label="Paper orientation">
+      <button
+        type="button"
+        class="orientation-option"
+        [class.active]="selectedOrientation === 'portrait'"
+        [attr.aria-checked]="selectedOrientation === 'portrait'"
+        role="radio"
+        (click)="onOrientationChange('portrait')"
+      >
+        Portrait
+      </button>
+      <button
+        type="button"
+        class="orientation-option"
+        [class.active]="selectedOrientation === 'landscape'"
+        [attr.aria-checked]="selectedOrientation === 'landscape'"
+        role="radio"
+        (click)="onOrientationChange('landscape')"
+      >
+        Landscape
+      </button>
+    </div>
+  </div>
+
+  <!-- Preview -->
+  <div class="preview-panel">
+    <div *ngIf="previewLoading" class="spinner"></div>
+
+    <ng-container *ngIf="!previewLoading">
+      <img
+        *ngIf="previewUrl && gridCols > 0"
+        class="layout-preview"
+        [src]="previewUrl"
+        alt="Layout preview"
+      />
+
+      <div *ngIf="previewUrl === ''" class="preview-placeholder">
+        <span>Photo too large for this paper</span>
+      </div>
+
+      <div *ngIf="previewUrl === null" class="preview-placeholder">
+        <span>Complete Step 2 first</span>
+      </div>
+    </ng-container>
+
+    <p *ngIf="!previewLoading && gridCols > 0 && gridRows > 0" class="grid-label">
+      {{ gridCols }} × {{ gridRows }} — {{ gridCols * gridRows }} photos
+    </p>
+
+    <p *ngIf="!previewLoading && previewUrl === ''" class="grid-label">
+      0 photos fit on this paper
+    </p>
+  </div>
+
+  <!-- Paper details below preview -->
+  <div *ngIf="selectedLayoutPaperSize" class="paper-details">
+    <h3>Selected Paper Details:</h3>
+    <p><strong>Name:</strong> {{ selectedLayoutPaperSize.name }}</p>
+    <p><strong>Dimensions:</strong> {{ selectedLayoutPaperSize.widthMm }}mm × {{ selectedLayoutPaperSize.heightMm }}mm</p>
+    <p><strong>Orientation:</strong> {{ selectedLayoutPaperSize.orientation | titlecase }}</p>
   </div>
 </div>
