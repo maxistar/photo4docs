@@ -67,7 +67,8 @@ export class Step2DocumentTypeComponent implements OnInit {
 
     this.previewLoading = true;
     try {
-      const result = await this.photoCropService.renderDocumentCrop(source.url, doc, source.landmarks);
+      const fillBackground = doc.backgroundColor ?? this.photoState.selectedBackgroundColor.getValue();
+      const result = await this.photoCropService.renderDocumentCrop(source.url, doc, source.landmarks, { fillBackground });
       this.applyCropResult(result);
     } finally {
       this.previewLoading = false;
