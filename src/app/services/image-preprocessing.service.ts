@@ -109,20 +109,11 @@ export class ImagePreprocessingService {
 
   // --- Face alignment (rotation) ---
 
-  private alignFace(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): AlignmentResult {
-    const leftCx = (landmarks.leftEye.x1 + landmarks.leftEye.x2) / 2;
-    const leftCy = (landmarks.leftEye.y1 + landmarks.leftEye.y2) / 2;
-    const rightCx = (landmarks.rightEye.x1 + landmarks.rightEye.x2) / 2;
-    const rightCy = (landmarks.rightEye.y1 + landmarks.rightEye.y2) / 2;
+  private applyRotation(canvas: HTMLCanvasElement, angle: number): HTMLCanvasElement {
+    if (Math.abs(angle) < 0.5 * Math.PI / 180) return canvas;
 
-    const angle = Math.atan2(rightCy - leftCy, rightCx - leftCx);
     const w = canvas.width;
     const h = canvas.height;
-
-    if (Math.abs(angle) < 0.5 * Math.PI / 180) {
-      return { canvas, angle: 0, origWidth: w, origHeight: h };
-    }
-
     const diagonal = Math.ceil(Math.sqrt(w * w + h * h));
     const rotated = document.createElement('canvas');
     rotated.width = diagonal;
@@ -134,7 +125,21 @@ export class ImagePreprocessingService {
     ctx.translate(-w / 2, -h / 2);
     ctx.drawImage(canvas, 0, 0);
 
-    return { canvas: rotated, angle, origWidth: w, origHeight: h };
+    return rotated;
+  }
+
+  private alignFace(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): AlignmentResult {
+    const leftCx = (landmarks.leftEye.x1 + landmarks.leftEye.x2) / 2;
+    const leftCy = (landmarks.leftEye.y1 + landmarks.leftEye.y2) / 2;
+    const rightCx = (landmarks.rightEye.x1 + landmarks.rightEye.x2) / 2;
+    const rightCy = (landmarks.rightEye.y1 + landmarks.rightEye.y2) / 2;
+
+    const angle = Math.atan2(rightCy - leftCy, rightCx - leftCx);
+    const w = canvas.width;
+    const h = canvas.height;
+    const effectiveAngle = Math.abs(angle) < 0.5 * Math.PI / 180 ? 0 : angle;
+
+    return { canvas: this.applyRotation(canvas, effectiveAngle), angle: effectiveAngle, origWidth: w, origHeight: h };
   }
 
   private transformLandmarks(landmarks: FaceLandmarks, alignment: AlignmentResult): FaceLandmarks {
@@ -257,7 +262,7 @@ export class ImagePreprocessingService {
     return chin.y - (chin.y - brow.y) * 1.45;
   }
 
-  // --- Face crop ---
+  // --- Face crop (for document steps; Step 1 uses the full aligned image) ---
 
   private cropToFace(canvas: HTMLCanvasElement, landmarks: FaceLandmarks): HTMLCanvasElement {
     const head = landmarks.headBox ?? landmarks.faceBox;
@@ -292,16 +297,22 @@ export class ImagePreprocessingService {
       this.photoState.preprocessingError.next(null);
       this.photoState.faceLandmarks.next(null);
       this.photoState.alignedFaceLandmarks.next(null);
+      this.photoState.alignmentAngle.next(0);
       this.photoState.setAlignedImage(null);
+      this.photoState.setAlignedOriginalImage(null);
       this.photoState.setProcessedImage(null);
+      this.photoState.setProcessedOriginalImage(null);
     });
 
     let landmarks: FaceLandmarks | null = null;
     let alignedLandmarks: FaceLandmarks | null = null;
     let alignedUrl: string | null = null;
-    let finalUrl: string | null = null;
+    let alignedOrigUrl: string | null = null;
+    let processedUrl: string | null = null;
+    let processedOrigUrl: string | null = null;
     let bgUrl: string | null = null;
     let errorMessage: string | null = null;
+    let angle = 0;
 
     await this.ngZone.runOutsideAngular(async () => {
       try {
@@ -317,9 +328,14 @@ export class ImagePreprocessingService {
         const alignment = this.alignFace(bgCanvas, landmarks);
         alignedLandmarks = this.estimateHeadBox(alignment.canvas, this.transformLandmarks(landmarks, alignment));
         alignedUrl = await this.canvasToUrl(alignment.canvas);
+        angle = alignment.angle;
 
-        const croppedCanvas = this.cropToFace(alignment.canvas, alignedLandmarks);
-        finalUrl = await this.canvasToUrl(croppedCanvas);
+        const origCanvas = this.imageToCanvas(imgElement);
+        const alignedOrigCanvas = this.applyRotation(origCanvas, alignment.angle);
+        alignedOrigUrl = await this.canvasToUrl(alignedOrigCanvas);
+
+        processedUrl = await this.canvasToUrl(this.cropToFace(alignment.canvas, alignedLandmarks));
+        processedOrigUrl = await this.canvasToUrl(this.cropToFace(alignedOrigCanvas, alignedLandmarks));
       } catch (err: any) {
         errorMessage = err?.message ?? 'Preprocessing failed. Please try a different photo.';
       } finally {
@@ -330,16 +346,21 @@ export class ImagePreprocessingService {
     });
 
     this.ngZone.run(() => {
-      if (errorMessage || !landmarks || !alignedLandmarks || !alignedUrl || !finalUrl) {
+      if (errorMessage || !landmarks || !alignedLandmarks || !alignedUrl || !alignedOrigUrl || !processedUrl || !processedOrigUrl) {
         if (alignedUrl?.startsWith('blob:')) URL.revokeObjectURL(alignedUrl);
-        if (finalUrl?.startsWith('blob:')) URL.revokeObjectURL(finalUrl);
+        if (alignedOrigUrl?.startsWith('blob:')) URL.revokeObjectURL(alignedOrigUrl);
+        if (processedUrl?.startsWith('blob:')) URL.revokeObjectURL(processedUrl);
+        if (processedOrigUrl?.startsWith('blob:')) URL.revokeObjectURL(processedOrigUrl);
         this.photoState.preprocessingError.next(errorMessage ?? 'Unknown error');
         this.photoState.preprocessingStatus.next('error');
       } else {
         this.photoState.faceLandmarks.next(landmarks);
         this.photoState.alignedFaceLandmarks.next(alignedLandmarks);
         this.photoState.setAlignedImage(alignedUrl);
-        this.photoState.setProcessedImage(finalUrl);
+        this.photoState.setAlignedOriginalImage(alignedOrigUrl);
+        this.photoState.setProcessedImage(processedUrl);
+        this.photoState.setProcessedOriginalImage(processedOrigUrl);
+        this.photoState.alignmentAngle.next(angle);
         this.photoState.preprocessingStatus.next('done');
       }
     });

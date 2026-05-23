@@ -30,13 +30,13 @@
     <span>Analysing photo — detecting face &amp; removing background…</span>
   </div>
 
-  <!-- Success indicator -->
+  <!-- Success indicator with rotation info and face count -->
   <div *ngIf="status === 'done'" class="status-indicator status-success">
     <i class="material-icons">check_circle</i>
     <span>
-      Face detected
-      <ng-container *ngIf="faceLandmarks && faceLandmarks.faceCount > 1">
-        &nbsp;<span class="warning-badge">{{ faceLandmarks.faceCount }} faces found — using the largest</span>
+      {{ rotationInfo }}
+      <ng-container *ngIf="alignedFaceLandmarks && alignedFaceLandmarks.faceCount > 1">
+        &nbsp;<span class="warning-badge">{{ alignedFaceLandmarks.faceCount }} faces found — using the largest</span>
       </ng-container>
     </span>
   </div>
@@ -47,7 +47,7 @@
     <span>{{ errorMessage }}</span>
   </div>
 
-  <!-- Image preview with eye overlay canvas -->
+  <!-- Image preview with overlay canvas -->
   <div *ngIf="displayImage" class="image-preview">
     <img
       #previewImg
@@ -55,11 +55,46 @@
       alt="Preview"
       (load)="onPreviewLoaded()"
     >
-    <!-- Overlay only shown while processing (original image coords); hidden once aligned+cropped result is displayed -->
     <canvas
       #previewCanvas
       class="preview-canvas"
-      [style.display]="status === 'running' ? 'block' : 'none'"
     ></canvas>
+  </div>
+
+  <!-- Controls (only shown after done) -->
+  <div *ngIf="status === 'done'" class="controls-panel">
+    <div class="controls-row">
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [checked]="!useOriginalBackground"
+          (change)="onBgToggle()"
+        >
+        Remove background
+      </label>
+    </div>
+    <div class="controls-row marks-row">
+      <span class="controls-label">Show marks:</span>
+      <label class="checkbox-label">
+        <input type="checkbox" [checked]="showHeadBox" (change)="showHeadBox = !showHeadBox; onMarkToggle()">
+        Head box
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" [checked]="showFaceBox" (change)="showFaceBox = !showFaceBox; onMarkToggle()">
+        Face box
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" [checked]="showEyeLine" (change)="showEyeLine = !showEyeLine; onMarkToggle()">
+        Eye line
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" [checked]="showChin" (change)="showChin = !showChin; onMarkToggle()">
+        Chin
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" [checked]="showBrowCenter" (change)="showBrowCenter = !showBrowCenter; onMarkToggle()">
+        Brow centre
+      </label>
+    </div>
   </div>
 </div>

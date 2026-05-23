@@ -75,16 +75,11 @@ export class Step2DocumentTypeComponent implements OnInit {
   }
 
   private getCropSource(doc: DocumentType): { url: string | null; landmarks: FaceLandmarks | null } {
-    const alignedUrl = this.photoState.alignedImage.getValue();
     const alignedLandmarks = this.photoState.alignedFaceLandmarks.getValue();
-    if (alignedUrl && alignedLandmarks && this.photoCropService.hasPlacementRules(doc)) {
-      return { url: alignedUrl, landmarks: alignedLandmarks };
+    if (alignedLandmarks && this.photoCropService.hasPlacementRules(doc)) {
+      return { url: this.photoState.getActiveAlignedImage(), landmarks: alignedLandmarks };
     }
-
-    return {
-      url: this.photoState.processedImage.getValue(),
-      landmarks: null
-    };
+    return { url: this.photoState.getActiveProcessedImage(), landmarks: null };
   }
 
   private applyCropResult(result: CropResult): void {

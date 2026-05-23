@@ -102,7 +102,11 @@ export class PhotoStateService {
   faceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
   alignedFaceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
   alignedImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
+  alignedOriginalImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
   processedImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
+  processedOriginalImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
+  alignmentAngle: BehaviorSubject<number> = new BehaviorSubject<number>(0);
+  useOriginalBackground: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   layoutPreviewUrl: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
 
   constructor() {}
@@ -134,8 +138,28 @@ export class PhotoStateService {
     this.replaceObjectUrl(this.alignedImage, url);
   }
 
+  setAlignedOriginalImage(url: string | null): void {
+    this.replaceObjectUrl(this.alignedOriginalImage, url);
+  }
+
   setProcessedImage(url: string | null): void {
     this.replaceObjectUrl(this.processedImage, url);
+  }
+
+  setProcessedOriginalImage(url: string | null): void {
+    this.replaceObjectUrl(this.processedOriginalImage, url);
+  }
+
+  getActiveAlignedImage(): string | null {
+    return this.useOriginalBackground.getValue()
+      ? this.alignedOriginalImage.getValue()
+      : this.alignedImage.getValue();
+  }
+
+  getActiveProcessedImage(): string | null {
+    return this.useOriginalBackground.getValue()
+      ? this.processedOriginalImage.getValue()
+      : this.processedImage.getValue();
   }
 
   setCroppedPhotoDataUrl(url: string | null): void {
@@ -157,7 +181,11 @@ export class PhotoStateService {
     this.faceLandmarks.next(null);
     this.alignedFaceLandmarks.next(null);
     this.setAlignedImage(null);
+    this.setAlignedOriginalImage(null);
     this.setProcessedImage(null);
+    this.setProcessedOriginalImage(null);
+    this.alignmentAngle.next(0);
+    this.useOriginalBackground.next(false);
     this.setLayoutPreviewUrl(null);
   }
 

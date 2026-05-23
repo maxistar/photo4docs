@@ -10,11 +10,21 @@ import { FaceLandmarks, PhotoStateService, PreprocessingStatus } from '../../ser
 })
 export class Step1UploadComponent implements OnInit, OnDestroy {
   fileName = '';
-  originalPreview: string | null = null;
   displayImage: string | null = null;
   status: PreprocessingStatus = 'idle';
   errorMessage: string | null = null;
-  faceLandmarks: FaceLandmarks | null = null;
+  alignedFaceLandmarks: FaceLandmarks | null = null;
+
+  showHeadBox = true;
+  showFaceBox = true;
+  showEyeLine = true;
+  showChin = true;
+  showBrowCenter = false;
+  useOriginalBackground = false;
+
+  private alignedImage: string | null = null;
+  private alignedOriginalImage: string | null = null;
+  private alignmentAngleRad = 0;
 
   @ViewChild('previewImg') previewImgRef!: ElementRef<HTMLImageElement>;
   @ViewChild('previewCanvas') previewCanvasRef!: ElementRef<HTMLCanvasElement>;
@@ -30,21 +40,39 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     this.subs.push(
       this.photoState.preprocessingStatus.subscribe(s => (this.status = s)),
       this.photoState.preprocessingError.subscribe(e => (this.errorMessage = e)),
-      this.photoState.processedImage.subscribe(url => {
-        if (url) this.displayImage = url;
+      this.photoState.alignedImage.subscribe(url => {
+        this.alignedImage = url;
+        if (!this.useOriginalBackground) this.displayImage = url;
       }),
-      this.photoState.faceLandmarks.subscribe(landmarks => {
-        this.faceLandmarks = landmarks;
-        if (landmarks) {
-          // Defer drawing until after Angular renders the updated displayImage
-          setTimeout(() => this.drawEyeOverlay(landmarks), 0);
-        }
-      })
+      this.photoState.alignedOriginalImage.subscribe(url => {
+        this.alignedOriginalImage = url;
+        if (this.useOriginalBackground) this.displayImage = url;
+      }),
+      this.photoState.alignedFaceLandmarks.subscribe(lm => {
+        this.alignedFaceLandmarks = lm;
+        if (lm) setTimeout(() => this.drawOverlay(), 0);
+      }),
+      this.photoState.alignmentAngle.subscribe(angle => {
+        this.alignmentAngleRad = angle;
+      }),
     );
   }
 
   ngOnDestroy(): void {
     this.subs.forEach(s => s.unsubscribe());
+  }
+
+  get rotationInfo(): string {
+    const deg = this.alignmentAngleRad * 180 / Math.PI;
+    if (Math.abs(deg) < 0.5) return 'No rotation applied';
+    const sign = deg > 0 ? '+' : '';
+    return `Rotation applied: ${sign}${deg.toFixed(1)}°`;
+  }
+
+  onBgToggle(): void {
+    this.useOriginalBackground = !this.useOriginalBackground;
+    this.photoState.useOriginalBackground.next(this.useOriginalBackground);
+    this.displayImage = this.useOriginalBackground ? this.alignedOriginalImage : this.alignedImage;
   }
 
   onFileSelected(event: Event): void {
@@ -60,33 +88,42 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     }
 
     this.displayImage = null;
-    this.originalPreview = null;
+    this.alignedImage = null;
+    this.alignedOriginalImage = null;
+    this.alignedFaceLandmarks = null;
 
     const reader = new FileReader();
     reader.onload = () => {
-      this.originalPreview = reader.result as string;
-      this.displayImage = this.originalPreview;
-
-      // Build an off-screen image element for face-api.js
       const img = new Image();
       img.onload = () => this.preprocessingService.preprocess(file, img);
-      img.src = this.originalPreview;
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   }
 
-  // Redraws overlay when the displayed <img> finishes loading (e.g. when switching
-  // from original to processed preview)
   onPreviewLoaded(): void {
-    if (this.faceLandmarks) {
-      this.drawEyeOverlay(this.faceLandmarks);
-    }
+    if (this.alignedFaceLandmarks) this.drawOverlay();
   }
 
-  private drawEyeOverlay(landmarks: FaceLandmarks): void {
+  onMarkToggle(): void {
+    this.drawOverlay();
+  }
+
+  triggerFileInput(): void {
+    document.getElementById('fileInput')?.click();
+  }
+
+  private drawOverlay(): void {
     const imgEl = this.previewImgRef?.nativeElement;
     const canvas = this.previewCanvasRef?.nativeElement;
-    if (!imgEl || !canvas || !imgEl.naturalWidth) return;
+    const lm = this.alignedFaceLandmarks;
+    if (!imgEl || !canvas) return;
+
+    if (!lm || !imgEl.naturalWidth) {
+      canvas.width = 0;
+      canvas.height = 0;
+      return;
+    }
 
     const scaleX = imgEl.clientWidth / imgEl.naturalWidth;
     const scaleY = imgEl.clientHeight / imgEl.naturalHeight;
@@ -94,47 +131,49 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     canvas.width = imgEl.clientWidth;
     canvas.height = imgEl.clientHeight;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Face bounding box
-    ctx.strokeStyle = '#4a90e2';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(
-      landmarks.faceBox.x * scaleX,
-      landmarks.faceBox.y * scaleY,
-      landmarks.faceBox.width * scaleX,
-      landmarks.faceBox.height * scaleY
-    );
-
-    // Eye boxes and precise centre line
-    ctx.strokeStyle = '#00cc44';
-    ctx.lineWidth = 2;
-    const eyeCenters: Array<{ x: number; y: number }> = [];
-    for (const eye of [landmarks.leftEye, landmarks.rightEye]) {
-      const padding = 4;
-      const x = eye.x1 * scaleX - padding;
-      const y = eye.y1 * scaleY - padding;
-      const w = (eye.x2 - eye.x1) * scaleX + padding * 2;
-      const h = (eye.y2 - eye.y1) * scaleY + padding * 2;
-      ctx.strokeRect(x, y, w, h);
-      eyeCenters.push({
-        x: ((eye.x1 + eye.x2) / 2) * scaleX,
-        y: ((eye.y1 + eye.y2) / 2) * scaleY,
-      });
+    if (this.showHeadBox) {
+      const box = lm.headBox ?? lm.faceBox;
+      ctx.strokeStyle = '#22cc44';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.x * scaleX, box.y * scaleY, box.width * scaleX, box.height * scaleY);
     }
 
-    if (eyeCenters.length === 2) {
-      ctx.strokeStyle = '#00aa55';
+    if (this.showFaceBox) {
+      ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(lm.faceBox.x * scaleX, lm.faceBox.y * scaleY, lm.faceBox.width * scaleX, lm.faceBox.height * scaleY);
+    }
+
+    if (this.showEyeLine) {
+      const leftCx = ((lm.leftEye.x1 + lm.leftEye.x2) / 2) * scaleX;
+      const leftCy = ((lm.leftEye.y1 + lm.leftEye.y2) / 2) * scaleY;
+      const rightCx = ((lm.rightEye.x1 + lm.rightEye.x2) / 2) * scaleX;
+      const rightCy = ((lm.rightEye.y1 + lm.rightEye.y2) / 2) * scaleY;
+      ctx.strokeStyle = '#22cc44';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
       ctx.beginPath();
-      ctx.moveTo(eyeCenters[0].x, eyeCenters[0].y);
-      ctx.lineTo(eyeCenters[1].x, eyeCenters[1].y);
+      ctx.moveTo(leftCx, leftCy);
+      ctx.lineTo(rightCx, rightCy);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
-  }
 
-  triggerFileInput(): void {
-    document.getElementById('fileInput')?.click();
+    if (this.showChin && lm.chin) {
+      ctx.fillStyle = '#ff8800';
+      ctx.beginPath();
+      ctx.arc(lm.chin.x * scaleX, lm.chin.y * scaleY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (this.showBrowCenter && lm.browCenter) {
+      ctx.fillStyle = '#9933cc';
+      ctx.beginPath();
+      ctx.arc(lm.browCenter.x * scaleX, lm.browCenter.y * scaleY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }

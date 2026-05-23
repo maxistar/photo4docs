@@ -97,14 +97,10 @@ export class Step4DownloadComponent implements OnInit {
   }
 
   private resolveCropSource(): { url: string | null; landmarks: FaceLandmarks | null } {
-    if (this.docType && this.photoCropService.hasPlacementRules(this.docType)) {
-      const alignedUrl = this.photoState.alignedImage.getValue();
-      const alignedLandmarks = this.photoState.alignedFaceLandmarks.getValue();
-      if (alignedUrl && alignedLandmarks) {
-        return { url: alignedUrl, landmarks: alignedLandmarks };
-      }
+    const alignedLandmarks = this.photoState.alignedFaceLandmarks.getValue();
+    if (this.docType && alignedLandmarks && this.photoCropService.hasPlacementRules(this.docType)) {
+      return { url: this.photoState.getActiveAlignedImage(), landmarks: alignedLandmarks };
     }
-
-    return { url: this.photoState.processedImage.getValue(), landmarks: null };
+    return { url: this.photoState.getActiveProcessedImage(), landmarks: null };
   }
 }
