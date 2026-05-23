@@ -18,6 +18,6 @@
     <div class="navigation">
       <button (click)="prevStep()" [disabled]="currentStep === 1">Previous</button>
       <button (click)="nextStep()" [disabled]="!canProceed() || currentStep === 4">Next</button>
-      <button (click)="resetWizard()" *ngIf="currentStep > 1" class="reset-button">Start Over</button>
+      <button (click)="resetWizard()" *ngIf="currentStep === 4" class="reset-button">Start Over</button>
     </div>
   </div>
