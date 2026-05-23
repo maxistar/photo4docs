@@ -15,18 +15,44 @@
             <option *ngFor="let paper of paperSizes"
                     [value]="paper.id"
                     [selected]="selectedPaperSize?.id === paper.id">
-              {{ paper.name }} ({{ paper.widthMm }}mm × {{ paper.heightMm }}mm, {{ paper.orientation }})
+              {{ paper.name }} ({{ paper.widthMm }}mm × {{ paper.heightMm }}mm)
             </option>
           </select>
           <i class="material-icons">arrow_drop_down</i>
         </div>
       </div>
 
-      <div *ngIf="selectedPaperSize" class="paper-details">
+      <div class="form-group">
+        <span class="field-label">Orientation:</span>
+        <div class="orientation-control" role="radiogroup" aria-label="Paper orientation">
+          <button
+            type="button"
+            class="orientation-option"
+            [class.active]="selectedOrientation === 'portrait'"
+            [attr.aria-checked]="selectedOrientation === 'portrait'"
+            role="radio"
+            (click)="onOrientationChange('portrait')"
+          >
+            Portrait
+          </button>
+          <button
+            type="button"
+            class="orientation-option"
+            [class.active]="selectedOrientation === 'landscape'"
+            [attr.aria-checked]="selectedOrientation === 'landscape'"
+            role="radio"
+            (click)="onOrientationChange('landscape')"
+          >
+            Landscape
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="selectedLayoutPaperSize" class="paper-details">
         <h3>Selected Paper Details:</h3>
-        <p><strong>Name:</strong> {{ selectedPaperSize.name }}</p>
-        <p><strong>Dimensions:</strong> {{ selectedPaperSize.widthMm }}mm × {{ selectedPaperSize.heightMm }}mm</p>
-        <p><strong>Orientation:</strong> {{ selectedPaperSize.orientation | titlecase }}</p>
+        <p><strong>Name:</strong> {{ selectedLayoutPaperSize.name }}</p>
+        <p><strong>Dimensions:</strong> {{ selectedLayoutPaperSize.widthMm }}mm × {{ selectedLayoutPaperSize.heightMm }}mm</p>
+        <p><strong>Orientation:</strong> {{ selectedLayoutPaperSize.orientation | titlecase }}</p>
       </div>
     </div>
 

@@ -10,6 +10,8 @@ import { PrintLayoutService } from '../../services/print-layout.service';
 export class Step3LayoutComponent implements OnInit {
   paperSizes: PaperSize[] = [];
   selectedPaperSize: PaperSize | null = null;
+  selectedLayoutPaperSize: PaperSize | null = null;
+  selectedOrientation: PaperSize['orientation'] = 'landscape';
 
   previewUrl: string | null = null;
   previewLoading = false;
@@ -25,7 +27,8 @@ export class Step3LayoutComponent implements OnInit {
     this.paperSizes = this.photoState.paperSizes;
     if (this.paperSizes.length > 0) {
       this.selectedPaperSize = this.paperSizes[0];
-      this.applyPaperSize(this.paperSizes[0]);
+      this.selectedOrientation = this.paperSizes[0].orientation;
+      this.applySelectedLayout();
     }
   }
 
@@ -34,8 +37,35 @@ export class Step3LayoutComponent implements OnInit {
     const paper = this.paperSizes.find(p => p.id === selectElement.value) || null;
     this.selectedPaperSize = paper;
     if (paper) {
-      this.applyPaperSize(paper);
+      this.applySelectedLayout();
     }
+  }
+
+  onOrientationChange(orientation: PaperSize['orientation']): void {
+    this.selectedOrientation = orientation;
+    if (this.selectedPaperSize) {
+      this.applySelectedLayout();
+    }
+  }
+
+  private applySelectedLayout(): void {
+    if (!this.selectedPaperSize) return;
+    const paper = this.orientPaperSize(this.selectedPaperSize, this.selectedOrientation);
+    this.selectedLayoutPaperSize = paper;
+    this.applyPaperSize(paper);
+  }
+
+  private orientPaperSize(paper: PaperSize, orientation: PaperSize['orientation']): PaperSize {
+    const shortSide = Math.min(paper.widthMm, paper.heightMm);
+    const longSide = Math.max(paper.widthMm, paper.heightMm);
+
+    return {
+      ...paper,
+      id: `${paper.id}_${orientation}`,
+      widthMm: orientation === 'landscape' ? longSide : shortSide,
+      heightMm: orientation === 'landscape' ? shortSide : longSide,
+      orientation
+    };
   }
 
   private async applyPaperSize(paper: PaperSize): Promise<void> {
