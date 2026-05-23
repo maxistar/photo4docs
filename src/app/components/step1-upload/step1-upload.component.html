@@ -8,67 +8,91 @@
     style="display: none;"
   >
 
-  <!-- Upload button -->
-  <button
-    type="button"
-    class="upload-button"
-    (click)="triggerFileInput()"
-    [disabled]="status === 'running'"
+  <!-- Preview area — always visible, clickable -->
+  <div
+    class="preview-area"
+    [class.empty]="!displayImage"
+    [class.clickable]="status !== 'running'"
+    (click)="onPreviewAreaClick()"
+    role="button"
+    tabindex="0"
+    (keydown.enter)="onPreviewAreaClick()"
+    (keydown.space)="onPreviewAreaClick()"
+    [attr.aria-label]="displayImage ? 'Click to change photo' : 'Click to select photo'"
   >
-    <i class="material-icons">image</i>
-    <span>{{ status === 'running' ? 'Analysing…' : 'Select Image' }}</span>
-  </button>
+    <!-- Silhouette placeholder -->
+    <div *ngIf="!displayImage" class="silhouette-placeholder">
+      <svg class="silhouette-icon" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="50" cy="38" rx="24" ry="28" fill="currentColor"/>
+        <path d="M10 120 Q10 82 50 82 Q90 82 90 120Z" fill="currentColor"/>
+      </svg>
+      <span class="tap-hint">Tap to select photo</span>
+    </div>
 
-  <!-- Selected file name -->
-  <div *ngIf="fileName" class="file-info">
-    Selected: {{ fileName }}
+    <!-- Real image + landmark overlay -->
+    <ng-container *ngIf="displayImage">
+      <img
+        #previewImg
+        [src]="displayImage"
+        alt="Preview"
+        (load)="onPreviewLoaded()"
+      >
+      <canvas #previewCanvas class="preview-canvas"></canvas>
+      <div class="preview-overlay">Change photo</div>
+    </ng-container>
   </div>
 
-  <!-- Processing indicator -->
-  <div *ngIf="status === 'running'" class="status-indicator status-running">
-    <div class="spinner"></div>
-    <span>Analysing photo — detecting face &amp; removing background…</span>
+  <!-- File name -->
+  <div *ngIf="fileName" class="file-info">{{ fileName }}</div>
+
+  <!-- Processing steps — always visible -->
+  <div class="processing-steps">
+
+    <!-- Step 1: Face detection -->
+    <div class="processing-step" [ngClass]="faceDetectionStatus">
+      <div class="step-icon">
+        <div *ngIf="faceDetectionStatus === 'idle'" class="step-icon-circle"></div>
+        <div *ngIf="faceDetectionStatus === 'running'" class="step-spinner"></div>
+        <i *ngIf="faceDetectionStatus === 'done'" class="material-icons step-check">check_circle</i>
+        <i *ngIf="faceDetectionStatus === 'error'" class="material-icons step-error-icon">error</i>
+      </div>
+      <div class="step-content">
+        <span class="step-label">Detecting face</span>
+        <span *ngIf="faceDetectionStatus === 'done'" class="step-detail">
+          {{ rotationInfo }}
+          <ng-container *ngIf="alignedFaceLandmarks && alignedFaceLandmarks.faceCount > 1">
+            &nbsp;·&nbsp;<span class="warning-badge">{{ alignedFaceLandmarks.faceCount }} faces — using the largest</span>
+          </ng-container>
+        </span>
+        <span *ngIf="faceDetectionStatus === 'error'" class="step-detail step-detail-error">{{ errorMessage }}</span>
+      </div>
+    </div>
+
+    <!-- Step 2: Background removal -->
+    <div class="processing-step" [ngClass]="bgRemovalStatus">
+      <div class="step-icon">
+        <div *ngIf="bgRemovalStatus === 'idle'" class="step-icon-circle"></div>
+        <div *ngIf="bgRemovalStatus === 'running'" class="step-spinner"></div>
+        <i *ngIf="bgRemovalStatus === 'done'" class="material-icons step-check">check_circle</i>
+        <i *ngIf="bgRemovalStatus === 'error'" class="material-icons step-error-icon">error</i>
+      </div>
+      <div class="step-content">
+        <span class="step-label">Removing background</span>
+        <span *ngIf="bgRemovalStatus === 'error'" class="step-detail step-detail-error">{{ errorMessage }}</span>
+      </div>
+    </div>
+
   </div>
 
-  <!-- Success indicator with rotation info and face count -->
-  <div *ngIf="status === 'done'" class="status-indicator status-success">
-    <i class="material-icons">check_circle</i>
-    <span>
-      {{ rotationInfo }}
-      <ng-container *ngIf="alignedFaceLandmarks && alignedFaceLandmarks.faceCount > 1">
-        &nbsp;<span class="warning-badge">{{ alignedFaceLandmarks.faceCount }} faces found — using the largest</span>
-      </ng-container>
-    </span>
-  </div>
-
-  <!-- Error message -->
-  <div *ngIf="status === 'error' && errorMessage" class="status-indicator status-error">
-    <i class="material-icons">error</i>
-    <span>{{ errorMessage }}</span>
-  </div>
-
-  <!-- Image preview with overlay canvas -->
-  <div *ngIf="displayImage" class="image-preview">
-    <img
-      #previewImg
-      [src]="displayImage"
-      alt="Preview"
-      (load)="onPreviewLoaded()"
-    >
-    <canvas
-      #previewCanvas
-      class="preview-canvas"
-    ></canvas>
-  </div>
-
-  <!-- Controls (only shown after done) -->
-  <div *ngIf="status === 'done'" class="controls-panel">
+  <!-- Controls — always visible, disabled until done -->
+  <div class="controls-panel" [class.disabled]="controlsDisabled">
     <div class="controls-row">
       <label class="checkbox-label">
         <input
           type="checkbox"
           [checked]="!useOriginalBackground"
           (change)="onBgToggle()"
+          [disabled]="controlsDisabled"
         >
         Remove background
       </label>
@@ -76,23 +100,23 @@
     <div class="controls-row marks-row">
       <span class="controls-label">Show marks:</span>
       <label class="checkbox-label">
-        <input type="checkbox" [checked]="showHeadBox" (change)="showHeadBox = !showHeadBox; onMarkToggle()">
+        <input type="checkbox" [checked]="showHeadBox" (change)="showHeadBox = !showHeadBox; onMarkToggle()" [disabled]="controlsDisabled">
         Head box
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" [checked]="showFaceBox" (change)="showFaceBox = !showFaceBox; onMarkToggle()">
+        <input type="checkbox" [checked]="showFaceBox" (change)="showFaceBox = !showFaceBox; onMarkToggle()" [disabled]="controlsDisabled">
         Face box
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" [checked]="showEyeLine" (change)="showEyeLine = !showEyeLine; onMarkToggle()">
+        <input type="checkbox" [checked]="showEyeLine" (change)="showEyeLine = !showEyeLine; onMarkToggle()" [disabled]="controlsDisabled">
         Eye line
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" [checked]="showChin" (change)="showChin = !showChin; onMarkToggle()">
+        <input type="checkbox" [checked]="showChin" (change)="showChin = !showChin; onMarkToggle()" [disabled]="controlsDisabled">
         Chin
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" [checked]="showBrowCenter" (change)="showBrowCenter = !showBrowCenter; onMarkToggle()">
+        <input type="checkbox" [checked]="showBrowCenter" (change)="showBrowCenter = !showBrowCenter; onMarkToggle()" [disabled]="controlsDisabled">
         Brow centre
       </label>
     </div>

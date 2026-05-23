@@ -1,7 +1,7 @@
 import { Injectable, NgZone } from '@angular/core';
 import * as faceapi from 'face-api.js';
 import { removeBackground } from '@imgly/background-removal';
-import { EyeCoordinates, FaceLandmarks, ImageBox, PhotoStateService, PointCoordinates } from './photo-state.service';
+import { EyeCoordinates, FaceLandmarks, ImageBox, PhotoStateService, PointCoordinates, SubStepStatus } from './photo-state.service';
 
 interface AlignmentResult {
   canvas: HTMLCanvasElement;
@@ -295,6 +295,8 @@ export class ImagePreprocessingService {
     this.ngZone.run(() => {
       this.photoState.preprocessingStatus.next('running');
       this.photoState.preprocessingError.next(null);
+      this.photoState.faceDetectionStatus.next('idle');
+      this.photoState.bgRemovalStatus.next('idle');
       this.photoState.faceLandmarks.next(null);
       this.photoState.alignedFaceLandmarks.next(null);
       this.photoState.alignmentAngle.next(0);
@@ -318,30 +320,50 @@ export class ImagePreprocessingService {
       try {
         await this.loadModels();
 
-        [landmarks, bgUrl] = await Promise.all([
-          this.detectFace(imgElement),
-          this.removeBg(file),
-        ]);
+        // Step 1: Face detection
+        this.ngZone.run(() => this.photoState.faceDetectionStatus.next('running'));
+        try {
+          landmarks = await this.detectFace(imgElement);
+          this.ngZone.run(() => this.photoState.faceDetectionStatus.next('done'));
+        } catch (err: any) {
+          errorMessage = err?.message ?? 'Face detection failed. Please try a different photo.';
+          this.ngZone.run(() => this.photoState.faceDetectionStatus.next('error'));
+          return;
+        }
 
-        const bgImg = await this.loadImage(bgUrl);
-        const bgCanvas = this.imageToCanvas(bgImg);
-        const alignment = this.alignFace(bgCanvas, landmarks);
-        alignedLandmarks = this.estimateHeadBox(alignment.canvas, this.transformLandmarks(landmarks, alignment));
-        alignedUrl = await this.canvasToUrl(alignment.canvas);
-        angle = alignment.angle;
+        // Step 2: Background removal
+        this.ngZone.run(() => this.photoState.bgRemovalStatus.next('running'));
+        try {
+          bgUrl = await this.removeBg(file);
+          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('done'));
+        } catch (err: any) {
+          errorMessage = err?.message ?? 'Background removal failed. Please try a different photo.';
+          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('error'));
+          return;
+        }
 
-        const origCanvas = this.imageToCanvas(imgElement);
-        const alignedOrigCanvas = this.applyRotation(origCanvas, alignment.angle);
-        alignedOrigUrl = await this.canvasToUrl(alignedOrigCanvas);
+        // Alignment + variants
+        try {
+          const bgImg = await this.loadImage(bgUrl);
+          const bgCanvas = this.imageToCanvas(bgImg);
+          const alignment = this.alignFace(bgCanvas, landmarks);
+          alignedLandmarks = this.estimateHeadBox(alignment.canvas, this.transformLandmarks(landmarks, alignment));
+          alignedUrl = await this.canvasToUrl(alignment.canvas);
+          angle = alignment.angle;
 
-        processedUrl = await this.canvasToUrl(this.cropToFace(alignment.canvas, alignedLandmarks));
-        processedOrigUrl = await this.canvasToUrl(this.cropToFace(alignedOrigCanvas, alignedLandmarks));
+          const origCanvas = this.imageToCanvas(imgElement);
+          const alignedOrigCanvas = this.applyRotation(origCanvas, alignment.angle);
+          alignedOrigUrl = await this.canvasToUrl(alignedOrigCanvas);
+
+          processedUrl = await this.canvasToUrl(this.cropToFace(alignment.canvas, alignedLandmarks));
+          processedOrigUrl = await this.canvasToUrl(this.cropToFace(alignedOrigCanvas, alignedLandmarks));
+        } catch (err: any) {
+          errorMessage = err?.message ?? 'Image alignment failed.';
+        } finally {
+          if (bgUrl?.startsWith('blob:')) URL.revokeObjectURL(bgUrl);
+        }
       } catch (err: any) {
         errorMessage = err?.message ?? 'Preprocessing failed. Please try a different photo.';
-      } finally {
-        if (bgUrl?.startsWith('blob:')) {
-          URL.revokeObjectURL(bgUrl);
-        }
       }
     });
 

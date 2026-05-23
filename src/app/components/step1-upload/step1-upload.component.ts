@@ -1,7 +1,7 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ImagePreprocessingService } from '../../services/image-preprocessing.service';
-import { FaceLandmarks, PhotoStateService, PreprocessingStatus } from '../../services/photo-state.service';
+import { FaceLandmarks, PhotoStateService, PreprocessingStatus, SubStepStatus } from '../../services/photo-state.service';
 
 @Component({
   selector: 'app-step1-upload',
@@ -14,6 +14,9 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
   status: PreprocessingStatus = 'idle';
   errorMessage: string | null = null;
   alignedFaceLandmarks: FaceLandmarks | null = null;
+
+  faceDetectionStatus: SubStepStatus = 'idle';
+  bgRemovalStatus: SubStepStatus = 'idle';
 
   showHeadBox = true;
   showFaceBox = true;
@@ -40,6 +43,8 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     this.subs.push(
       this.photoState.preprocessingStatus.subscribe(s => (this.status = s)),
       this.photoState.preprocessingError.subscribe(e => (this.errorMessage = e)),
+      this.photoState.faceDetectionStatus.subscribe(s => (this.faceDetectionStatus = s)),
+      this.photoState.bgRemovalStatus.subscribe(s => (this.bgRemovalStatus = s)),
       this.photoState.alignedImage.subscribe(url => {
         this.alignedImage = url;
         if (!this.useOriginalBackground) this.displayImage = url;
@@ -66,13 +71,23 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     const deg = this.alignmentAngleRad * 180 / Math.PI;
     if (Math.abs(deg) < 0.5) return 'No rotation applied';
     const sign = deg > 0 ? '+' : '';
-    return `Rotation applied: ${sign}${deg.toFixed(1)}°`;
+    return `Rotation: ${sign}${deg.toFixed(1)}°`;
+  }
+
+  get controlsDisabled(): boolean {
+    return this.status !== 'done';
   }
 
   onBgToggle(): void {
+    if (this.controlsDisabled) return;
     this.useOriginalBackground = !this.useOriginalBackground;
     this.photoState.useOriginalBackground.next(this.useOriginalBackground);
     this.displayImage = this.useOriginalBackground ? this.alignedOriginalImage : this.alignedImage;
+  }
+
+  onPreviewAreaClick(): void {
+    if (this.status === 'running') return;
+    document.getElementById('fileInput')?.click();
   }
 
   onFileSelected(event: Event): void {
@@ -91,6 +106,7 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     this.alignedImage = null;
     this.alignedOriginalImage = null;
     this.alignedFaceLandmarks = null;
+    this.useOriginalBackground = false;
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -107,10 +123,6 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
 
   onMarkToggle(): void {
     this.drawOverlay();
-  }
-
-  triggerFileInput(): void {
-    document.getElementById('fileInput')?.click();
   }
 
   private drawOverlay(): void {

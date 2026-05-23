@@ -4,6 +4,7 @@ import { BehaviorSubject } from 'rxjs';
 import { DOCUMENT_TYPES } from './document-types';
 
 export type PreprocessingStatus = 'idle' | 'running' | 'done' | 'error';
+export type SubStepStatus = 'idle' | 'running' | 'done' | 'error';
 
 export interface EyeCoordinates {
   x1: number; y1: number; x2: number; y2: number;
@@ -99,6 +100,8 @@ export class PhotoStateService {
   // --- Preprocessing State ---
   preprocessingStatus: BehaviorSubject<PreprocessingStatus> = new BehaviorSubject<PreprocessingStatus>('idle');
   preprocessingError: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
+  faceDetectionStatus: BehaviorSubject<SubStepStatus> = new BehaviorSubject<SubStepStatus>('idle');
+  bgRemovalStatus: BehaviorSubject<SubStepStatus> = new BehaviorSubject<SubStepStatus>('idle');
   faceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
   alignedFaceLandmarks: BehaviorSubject<FaceLandmarks | null> = new BehaviorSubject<FaceLandmarks | null>(null);
   alignedImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
@@ -178,6 +181,8 @@ export class PhotoStateService {
     this.selectedOutputFormat.next('jpg');
     this.preprocessingStatus.next('idle');
     this.preprocessingError.next(null);
+    this.faceDetectionStatus.next('idle');
+    this.bgRemovalStatus.next('idle');
     this.faceLandmarks.next(null);
     this.alignedFaceLandmarks.next(null);
     this.setAlignedImage(null);

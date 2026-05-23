@@ -4,56 +4,67 @@
   align-items: center;
   gap: 1rem;
   padding: 2rem;
-  border: 2px dashed #ccc;
-  border-radius: 8px;
-  background-color: #f9f9f9;
   max-width: 600px;
   margin: 0 auto;
 }
 
-.upload-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background-color: #4a90e2;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.3s ease;
-}
+/* ── Preview area ── */
 
-.upload-button:hover {
-  background-color: #357abd;
-}
-
-.upload-button:active {
-  transform: translateY(1px);
-}
-
-.file-info {
-  margin-top: 8px;
-  color: #555;
-  font-size: 14px;
-}
-
-/* relative + inline-block so the canvas overlay matches the image exactly */
-.image-preview {
+.preview-area {
   position: relative;
-  display: inline-block;
-  margin-top: 1rem;
-  max-width: 100%;
-  border-radius: 4px;
+  width: 100%;
+  max-width: 360px;
+  border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  outline: none;
 }
 
-.image-preview img {
+.preview-area.empty {
+  border: 2px dashed #c8d0dc;
+  background: #f4f6f9;
+  border-radius: 8px;
+}
+
+.preview-area.clickable {
+  cursor: pointer;
+}
+
+/* Silhouette */
+
+.silhouette-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 320px;
+  padding: 2rem;
+  color: #b8c4d4;
+  transition: background 0.15s, color 0.15s;
+}
+
+.preview-area.clickable.empty:hover .silhouette-placeholder,
+.preview-area.clickable.empty:focus .silhouette-placeholder {
+  background: #eef1f6;
+  color: #8a98aa;
+}
+
+.silhouette-icon {
+  width: 88px;
+  height: auto;
+}
+
+.tap-hint {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Real image */
+
+.preview-area img {
   display: block;
-  max-width: 100%;
-  max-height: 400px;
+  width: 100%;
+  max-height: 440px;
   object-fit: contain;
 }
 
@@ -64,53 +75,157 @@
   pointer-events: none;
 }
 
-/* Status indicators */
-.status-indicator {
+/* "Change photo" hover overlay */
+
+.preview-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.8rem;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.preview-area.clickable:hover .preview-overlay,
+.preview-area.clickable:focus .preview-overlay {
+  opacity: 1;
+}
+
+/* File info */
+
+.file-info {
+  font-size: 0.8rem;
+  color: #777;
+  text-align: center;
+}
+
+/* ── Processing steps ── */
+
+.processing-steps {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.processing-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 6px;
+  border: 1px solid #e8eaed;
+  background: #fafafa;
+  transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+}
+
+.processing-step.idle {
+  opacity: 0.45;
+}
+
+.processing-step.running {
+  border-color: #4a90e2;
+  background: #eef4fd;
+  opacity: 1;
+}
+
+.processing-step.done {
+  border-color: #34a853;
+  background: #e8f5e9;
+  opacity: 1;
+}
+
+.processing-step.error {
+  border-color: #ea4335;
+  background: #fce8e6;
+  opacity: 1;
+}
+
+.step-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  width: 100%;
-  box-sizing: border-box;
+  justify-content: center;
+  margin-top: 1px;
 }
 
-.status-running {
-  background-color: #e8f0fe;
-  color: #1a73e8;
+.step-icon-circle {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #bbb;
+  border-radius: 50%;
 }
 
-.status-success {
-  background-color: #e6f4ea;
-  color: #188038;
-}
-
-.status-error {
-  background-color: #fce8e6;
-  color: #c5221f;
-}
-
-/* CSS spinner */
-.spinner {
+.step-spinner {
   width: 18px;
   height: 18px;
   border: 2px solid #b3c8f5;
   border-top-color: #1a73e8;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.step-check {
+  color: #34a853;
+  font-size: 18px;
+  line-height: 1;
 }
+
+.step-error-icon {
+  color: #ea4335;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.step-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.processing-step.idle .step-label {
+  color: #999;
+}
+
+.step-detail {
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.step-detail-error {
+  color: #c5221f;
+}
+
+/* ── Controls ── */
 
 .controls-panel {
   width: 100%;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  transition: opacity 0.2s;
+}
+
+.controls-panel.disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .controls-row {
@@ -143,24 +258,15 @@
   background-color: #fff3cd;
   color: #856404;
   border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
-/* Material Icons */
-.material-icons {
-  font-family: 'Material Icons';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  font-feature-settings: 'liga';
-  -webkit-font-feature-settings: 'liga';
-  -webkit-font-smoothing: antialiased;
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 599px) {
+  .upload-container { padding: 1rem; }
+  .silhouette-placeholder { min-height: 260px; }
 }
