@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { DocumentType, FaceLandmarks, PaperSize } from './photo-state.service';
+import { DocumentType, FaceLandmarks, PaperSize, PhotoStateService } from './photo-state.service';
 import { CropResult, PhotoCropService } from './photo-crop.service';
 
 const PRINT_DPI = 300;
@@ -21,7 +21,7 @@ export interface LayoutGeometry {
 export class PhotoDownloadService {
   private lastImageUrl: string | null = null;
 
-  constructor(private photoCropService: PhotoCropService) {}
+  constructor(private photoCropService: PhotoCropService, private photoState: PhotoStateService) {}
 
   async renderLayoutJpeg(
     sourceImageUrl: string,
@@ -140,7 +140,7 @@ export class PhotoDownloadService {
       mimeType,
       quality,
       createUrl,
-      fillBackground: docType.backgroundColor ?? '#ffffff'
+      fillBackground: docType.backgroundColor ?? this.photoState.selectedBackgroundColor.getValue()
     });
   }
 

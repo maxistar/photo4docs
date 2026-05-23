@@ -15,6 +15,7 @@ interface AlignmentResult {
 export class ImagePreprocessingService {
   private modelsLoaded = false;
   private modelsLoadingPromise: Promise<void> | null = null;
+  private preprocessingGeneration = 0;
 
   constructor(private photoState: PhotoStateService, private ngZone: NgZone) {}
 
@@ -255,6 +256,22 @@ export class ImagePreprocessingService {
     return { ...landmarks, headBox };
   }
 
+  // Landmark-only headBox estimation — no pixel scan, safe to call on opaque canvas
+  private estimateHeadBoxFromLandmarks(landmarks: FaceLandmarks): FaceLandmarks {
+    const face = landmarks.faceBox;
+    const chin = landmarks.chin ?? { x: face.x + face.width / 2, y: face.y + face.height };
+    const headTop = Math.max(0, this.estimateHeadTopFromLandmarks(landmarks));
+    const headHeight = Math.max(1, chin.y - headTop);
+    const centerX = face.x + face.width / 2;
+    const headBox: ImageBox = {
+      x: centerX - face.width / 2,
+      y: headTop,
+      width: face.width,
+      height: headHeight,
+    };
+    return { ...landmarks, headBox };
+  }
+
   private estimateHeadTopFromLandmarks(landmarks: FaceLandmarks): number {
     const face = landmarks.faceBox;
     const chin = landmarks.chin ?? { x: face.x + face.width / 2, y: face.y + face.height };
@@ -292,6 +309,8 @@ export class ImagePreprocessingService {
   // --- Main pipeline ---
 
   async preprocess(file: File, imgElement: HTMLImageElement): Promise<void> {
+    const generation = ++this.preprocessingGeneration;
+
     this.ngZone.run(() => {
       this.photoState.preprocessingStatus.next('running');
       this.photoState.preprocessingError.next(null);
@@ -307,82 +326,125 @@ export class ImagePreprocessingService {
     });
 
     let landmarks: FaceLandmarks | null = null;
-    let alignedLandmarks: FaceLandmarks | null = null;
+    let intermediateAlignedLandmarks: FaceLandmarks | null = null;  // landmark-only headBox
+    let finalAlignedLandmarks: FaceLandmarks | null = null;         // pixel-scan headBox after bg removal
     let alignedUrl: string | null = null;
     let alignedOrigUrl: string | null = null;
     let processedUrl: string | null = null;
     let processedOrigUrl: string | null = null;
-    let bgUrl: string | null = null;
     let errorMessage: string | null = null;
     let angle = 0;
+    let bgWasUsed = false;
 
     await this.ngZone.runOutsideAngular(async () => {
       try {
         await this.loadModels();
 
-        // Step 1: Face detection
+        // Phase 1: Face detection
         this.ngZone.run(() => this.photoState.faceDetectionStatus.next('running'));
         try {
           landmarks = await this.detectFace(imgElement);
-          this.ngZone.run(() => this.photoState.faceDetectionStatus.next('done'));
         } catch (err: any) {
           errorMessage = err?.message ?? 'Face detection failed. Please try a different photo.';
           this.ngZone.run(() => this.photoState.faceDetectionStatus.next('error'));
           return;
         }
 
-        // Step 2: Background removal
-        this.ngZone.run(() => this.photoState.bgRemovalStatus.next('running'));
+        // Phase 1b: Align original image immediately and emit intermediate state
+        // Uses landmark-only headBox (no pixel scan) so it works on opaque canvas.
         try {
-          bgUrl = await this.removeBg(file);
-          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('done'));
+          const origCanvas = this.imageToCanvas(imgElement);
+          const alignment = this.alignFace(origCanvas, landmarks);
+          angle = alignment.angle;
+          const transformedLm = this.transformLandmarks(landmarks, alignment);
+          intermediateAlignedLandmarks = this.estimateHeadBoxFromLandmarks(transformedLm);
+
+          alignedOrigUrl = await this.canvasToUrl(alignment.canvas);
+          processedOrigUrl = await this.canvasToUrl(this.cropToFace(alignment.canvas, intermediateAlignedLandmarks));
+
+          // Emit intermediate: rotated original + landmarks visible immediately
+          this.ngZone.run(() => {
+            this.photoState.faceDetectionStatus.next('done');
+            this.photoState.faceLandmarks.next(landmarks);
+            this.photoState.alignedFaceLandmarks.next(intermediateAlignedLandmarks);
+            this.photoState.alignmentAngle.next(angle);
+            this.photoState.setAlignedOriginalImage(alignedOrigUrl);
+            this.photoState.setProcessedOriginalImage(processedOrigUrl);
+          });
         } catch (err: any) {
-          errorMessage = err?.message ?? 'Background removal failed. Please try a different photo.';
-          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('error'));
+          errorMessage = err?.message ?? 'Image alignment failed.';
           return;
         }
 
-        // Alignment + variants
-        try {
-          const bgImg = await this.loadImage(bgUrl);
-          const bgCanvas = this.imageToCanvas(bgImg);
-          const alignment = this.alignFace(bgCanvas, landmarks);
-          alignedLandmarks = this.estimateHeadBox(alignment.canvas, this.transformLandmarks(landmarks, alignment));
-          alignedUrl = await this.canvasToUrl(alignment.canvas);
-          angle = alignment.angle;
+        // Phase 2: Background removal (optional)
+        const bgEnabledAtStart = this.photoState.removeBackgroundEnabled.getValue();
+        if (bgEnabledAtStart) {
+          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('running'));
+          let bgUrl: string | null = null;
+          try {
+            const result = await this.removeBg(file);
+            const stillCurrent = generation === this.preprocessingGeneration;
+            const stillEnabled = this.photoState.removeBackgroundEnabled.getValue();
+            if (stillCurrent && stillEnabled) {
+              bgUrl = result;
+            } else {
+              URL.revokeObjectURL(result);
+              this.ngZone.run(() => this.photoState.bgRemovalStatus.next('skipped'));
+            }
+          } catch {
+            this.ngZone.run(() => this.photoState.bgRemovalStatus.next('skipped'));
+          }
 
-          const origCanvas = this.imageToCanvas(imgElement);
-          const alignedOrigCanvas = this.applyRotation(origCanvas, alignment.angle);
-          alignedOrigUrl = await this.canvasToUrl(alignedOrigCanvas);
+          if (bgUrl) {
+            try {
+              const bgImg = await this.loadImage(bgUrl);
+              const bgCanvas = this.imageToCanvas(bgImg);
+              // Apply the same rotation angle computed from the original
+              const bgAlignedCanvas = this.applyRotation(bgCanvas, angle);
 
-          processedUrl = await this.canvasToUrl(this.cropToFace(alignment.canvas, alignedLandmarks));
-          processedOrigUrl = await this.canvasToUrl(this.cropToFace(alignedOrigCanvas, alignedLandmarks));
-        } catch (err: any) {
-          errorMessage = err?.message ?? 'Image alignment failed.';
-        } finally {
-          if (bgUrl?.startsWith('blob:')) URL.revokeObjectURL(bgUrl);
+              // Re-estimate headBox with pixel scan on transparent bg-removed canvas
+              finalAlignedLandmarks = this.estimateHeadBox(bgAlignedCanvas, intermediateAlignedLandmarks!);
+
+              alignedUrl = await this.canvasToUrl(bgAlignedCanvas);
+              processedUrl = await this.canvasToUrl(this.cropToFace(bgAlignedCanvas, finalAlignedLandmarks));
+              bgWasUsed = true;
+
+              // Emit: bg-removed image + updated landmarks with accurate headBox
+              this.ngZone.run(() => {
+                this.photoState.bgRemovalStatus.next('done');
+                this.photoState.alignedFaceLandmarks.next(finalAlignedLandmarks);
+                this.photoState.setAlignedImage(alignedUrl);
+                this.photoState.setProcessedImage(processedUrl);
+              });
+            } catch (err: any) {
+              errorMessage = err?.message ?? 'BG alignment failed.';
+            } finally {
+              URL.revokeObjectURL(bgUrl);
+            }
+          }
+        } else {
+          this.ngZone.run(() => this.photoState.bgRemovalStatus.next('skipped'));
         }
+
       } catch (err: any) {
         errorMessage = err?.message ?? 'Preprocessing failed. Please try a different photo.';
       }
     });
 
     this.ngZone.run(() => {
-      if (errorMessage || !landmarks || !alignedLandmarks || !alignedUrl || !alignedOrigUrl || !processedUrl || !processedOrigUrl) {
-        if (alignedUrl?.startsWith('blob:')) URL.revokeObjectURL(alignedUrl);
-        if (alignedOrigUrl?.startsWith('blob:')) URL.revokeObjectURL(alignedOrigUrl);
-        if (processedUrl?.startsWith('blob:')) URL.revokeObjectURL(processedUrl);
-        if (processedOrigUrl?.startsWith('blob:')) URL.revokeObjectURL(processedOrigUrl);
+      if (errorMessage || !landmarks || !intermediateAlignedLandmarks || !alignedOrigUrl || !processedOrigUrl) {
+        // Clear any intermediate state that was emitted
+        this.photoState.setAlignedImage(null);
+        this.photoState.setAlignedOriginalImage(null);
+        this.photoState.setProcessedImage(null);
+        this.photoState.setProcessedOriginalImage(null);
+        this.photoState.alignedFaceLandmarks.next(null);
         this.photoState.preprocessingError.next(errorMessage ?? 'Unknown error');
         this.photoState.preprocessingStatus.next('error');
       } else {
-        this.photoState.faceLandmarks.next(landmarks);
-        this.photoState.alignedFaceLandmarks.next(alignedLandmarks);
-        this.photoState.setAlignedImage(alignedUrl);
-        this.photoState.setAlignedOriginalImage(alignedOrigUrl);
-        this.photoState.setProcessedImage(processedUrl);
-        this.photoState.setProcessedOriginalImage(processedOrigUrl);
-        this.photoState.alignmentAngle.next(angle);
+        if (!bgWasUsed) {
+          this.photoState.useOriginalBackground.next(true);
+        }
         this.photoState.preprocessingStatus.next('done');
       }
     });

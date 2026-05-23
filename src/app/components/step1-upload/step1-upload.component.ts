@@ -11,6 +11,7 @@ import { FaceLandmarks, PhotoStateService, PreprocessingStatus, SubStepStatus } 
 export class Step1UploadComponent implements OnInit, OnDestroy {
   fileName = '';
   displayImage: string | null = null;
+  imageLoaded = false;
   status: PreprocessingStatus = 'idle';
   errorMessage: string | null = null;
   alignedFaceLandmarks: FaceLandmarks | null = null;
@@ -24,6 +25,16 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
   showChin = true;
   showBrowCenter = false;
   useOriginalBackground = false;
+  removeBackgroundEnabled = true;
+
+  readonly presetColors = [
+    { hex: '#ffffff', label: 'White' },
+    { hex: '#e8e8e8', label: 'Light gray' },
+    { hex: '#d6e4f0', label: 'Light blue' },
+    { hex: '#f5f0e8', label: 'Beige' },
+    { hex: '#fffacd', label: 'Pale yellow' },
+  ];
+  selectedBackgroundColor = '#ffffff';
 
   private alignedImage: string | null = null;
   private alignedOriginalImage: string | null = null;
@@ -47,11 +58,15 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
       this.photoState.bgRemovalStatus.subscribe(s => (this.bgRemovalStatus = s)),
       this.photoState.alignedImage.subscribe(url => {
         this.alignedImage = url;
-        if (!this.useOriginalBackground) this.displayImage = url;
+        this.refreshDisplayImage();
       }),
       this.photoState.alignedOriginalImage.subscribe(url => {
         this.alignedOriginalImage = url;
-        if (this.useOriginalBackground) this.displayImage = url;
+        this.refreshDisplayImage();
+      }),
+      this.photoState.useOriginalBackground.subscribe(v => {
+        this.useOriginalBackground = v;
+        this.refreshDisplayImage();
       }),
       this.photoState.alignedFaceLandmarks.subscribe(lm => {
         this.alignedFaceLandmarks = lm;
@@ -60,11 +75,29 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
       this.photoState.alignmentAngle.subscribe(angle => {
         this.alignmentAngleRad = angle;
       }),
+      this.photoState.selectedBackgroundColor.subscribe(c => (this.selectedBackgroundColor = c)),
+      this.photoState.removeBackgroundEnabled.subscribe(v => (this.removeBackgroundEnabled = v)),
     );
   }
 
   ngOnDestroy(): void {
     this.subs.forEach(s => s.unsubscribe());
+  }
+
+  // Always shows the best available image for the current state.
+  private refreshDisplayImage(): void {
+    let next: string | null;
+    if (!this.useOriginalBackground && this.alignedImage) {
+      next = this.alignedImage;
+    } else if (this.alignedOriginalImage) {
+      next = this.alignedOriginalImage;
+    } else {
+      return; // no change — keep whatever is currently shown (original or null)
+    }
+    if (next !== this.displayImage) {
+      this.displayImage = next;
+      this.imageLoaded = false;
+    }
   }
 
   get rotationInfo(): string {
@@ -79,10 +112,22 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
   }
 
   onBgToggle(): void {
-    if (this.controlsDisabled) return;
-    this.useOriginalBackground = !this.useOriginalBackground;
-    this.photoState.useOriginalBackground.next(this.useOriginalBackground);
-    this.displayImage = this.useOriginalBackground ? this.alignedOriginalImage : this.alignedImage;
+    if (!this.fileName) return;
+    const enableBg = !this.removeBackgroundEnabled;
+    this.photoState.removeBackgroundEnabled.next(enableBg);
+    if (!enableBg) {
+      this.photoState.useOriginalBackground.next(true);
+    } else if (this.status === 'done') {
+      this.photoState.useOriginalBackground.next(false);
+    }
+  }
+
+  get isCustomColor(): boolean {
+    return !this.presetColors.some(c => c.hex === this.selectedBackgroundColor);
+  }
+
+  onColorSelect(color: string): void {
+    this.photoState.selectedBackgroundColor.next(color);
   }
 
   onPreviewAreaClick(): void {
@@ -103,21 +148,31 @@ export class Step1UploadComponent implements OnInit, OnDestroy {
     }
 
     this.displayImage = null;
+    this.imageLoaded = false;
     this.alignedImage = null;
     this.alignedOriginalImage = null;
     this.alignedFaceLandmarks = null;
     this.useOriginalBackground = false;
+    this.photoState.removeBackgroundEnabled.next(true);
+    this.photoState.selectedBackgroundColor.next('#ffffff');
 
     const reader = new FileReader();
     reader.onload = () => {
+      const dataUrl = reader.result as string;
       const img = new Image();
-      img.onload = () => this.preprocessingService.preprocess(file, img);
-      img.src = reader.result as string;
+      img.onload = () => {
+        // Show the original image immediately before any processing
+        this.displayImage = dataUrl;
+        this.imageLoaded = false;
+        this.preprocessingService.preprocess(file, img);
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   }
 
   onPreviewLoaded(): void {
+    this.imageLoaded = true;
     if (this.alignedFaceLandmarks) this.drawOverlay();
   }
 

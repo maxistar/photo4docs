@@ -4,7 +4,7 @@ import { BehaviorSubject } from 'rxjs';
 import { DOCUMENT_TYPES } from './document-types';
 
 export type PreprocessingStatus = 'idle' | 'running' | 'done' | 'error';
-export type SubStepStatus = 'idle' | 'running' | 'done' | 'error';
+export type SubStepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
 
 export interface EyeCoordinates {
   x1: number; y1: number; x2: number; y2: number;
@@ -110,6 +110,8 @@ export class PhotoStateService {
   processedOriginalImage: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
   alignmentAngle: BehaviorSubject<number> = new BehaviorSubject<number>(0);
   useOriginalBackground: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
+  removeBackgroundEnabled: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(true);
+  selectedBackgroundColor: BehaviorSubject<string> = new BehaviorSubject<string>('#ffffff');
   layoutPreviewUrl: BehaviorSubject<string | null> = new BehaviorSubject<string | null>(null);
 
   constructor() {}
@@ -191,6 +193,8 @@ export class PhotoStateService {
     this.setProcessedOriginalImage(null);
     this.alignmentAngle.next(0);
     this.useOriginalBackground.next(false);
+    this.removeBackgroundEnabled.next(true);
+    this.selectedBackgroundColor.next('#ffffff');
     this.setLayoutPreviewUrl(null);
   }
 

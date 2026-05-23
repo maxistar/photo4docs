@@ -13,6 +13,7 @@
     class="preview-area"
     [class.empty]="!displayImage"
     [class.clickable]="status !== 'running'"
+    [style.background-color]="(!useOriginalBackground && displayImage) ? selectedBackgroundColor : null"
     (click)="onPreviewAreaClick()"
     role="button"
     tabindex="0"
@@ -21,12 +22,17 @@
     [attr.aria-label]="displayImage ? 'Click to change photo' : 'Click to select photo'"
   >
     <!-- Silhouette placeholder -->
-    <div *ngIf="!displayImage" class="silhouette-placeholder">
+    <div *ngIf="!displayImage && status !== 'running'" class="silhouette-placeholder">
       <svg class="silhouette-icon" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
         <ellipse cx="50" cy="38" rx="24" ry="28" fill="currentColor"/>
         <path d="M10 120 Q10 82 50 82 Q90 82 90 120Z" fill="currentColor"/>
       </svg>
       <span class="tap-hint">Tap to select photo</span>
+    </div>
+
+    <!-- Spinner only before the original image has appeared -->
+    <div *ngIf="status === 'running' && !displayImage" class="preview-spinner-overlay">
+      <div class="preview-spinner"></div>
     </div>
 
     <!-- Real image + landmark overlay -->
@@ -35,6 +41,7 @@
         #previewImg
         [src]="displayImage"
         alt="Preview"
+        [class.loaded]="imageLoaded"
         (load)="onPreviewLoaded()"
       >
       <canvas #previewCanvas class="preview-canvas"></canvas>
@@ -74,30 +81,66 @@
         <div *ngIf="bgRemovalStatus === 'idle'" class="step-icon-circle"></div>
         <div *ngIf="bgRemovalStatus === 'running'" class="step-spinner"></div>
         <i *ngIf="bgRemovalStatus === 'done'" class="material-icons step-check">check_circle</i>
+        <i *ngIf="bgRemovalStatus === 'skipped'" class="material-icons step-skip">remove_circle_outline</i>
         <i *ngIf="bgRemovalStatus === 'error'" class="material-icons step-error-icon">error</i>
       </div>
       <div class="step-content">
         <span class="step-label">Removing background</span>
+        <span *ngIf="bgRemovalStatus === 'skipped'" class="step-detail">Skipped</span>
         <span *ngIf="bgRemovalStatus === 'error'" class="step-detail step-detail-error">{{ errorMessage }}</span>
       </div>
     </div>
 
   </div>
 
-  <!-- Controls — always visible, disabled until done -->
-  <div class="controls-panel" [class.disabled]="controlsDisabled">
+  <!-- Controls panel -->
+  <div class="controls-panel">
+    <!-- Remove background — active as soon as a file is selected -->
     <div class="controls-row">
       <label class="checkbox-label">
         <input
           type="checkbox"
-          [checked]="!useOriginalBackground"
+          [checked]="removeBackgroundEnabled"
           (change)="onBgToggle()"
-          [disabled]="controlsDisabled"
+          [disabled]="!fileName"
         >
         Remove background
       </label>
     </div>
-    <div class="controls-row marks-row">
+
+    <!-- Background color picker — enabled only when bg removal is on and processing is done -->
+    <div class="controls-row color-picker-row" [class.disabled]="!removeBackgroundEnabled || controlsDisabled">
+      <span class="controls-label">Background:</span>
+      <button
+        *ngFor="let c of presetColors"
+        class="color-swatch"
+        [class.active]="selectedBackgroundColor === c.hex"
+        [style.background-color]="c.hex"
+        [title]="c.label"
+        (click)="onColorSelect(c.hex)"
+        type="button"
+      ></button>
+      <!-- Custom color -->
+      <button
+        class="color-swatch color-swatch-custom"
+        [class.active]="isCustomColor"
+        [style.background-color]="selectedBackgroundColor"
+        title="Custom color"
+        (click)="customColorInput.click()"
+        type="button"
+      >
+        <span class="custom-icon">+</span>
+      </button>
+      <input
+        #customColorInput
+        type="color"
+        [value]="selectedBackgroundColor"
+        (input)="onColorSelect(customColorInput.value)"
+        style="display: none;"
+      >
+    </div>
+
+    <div class="controls-row marks-row" [class.disabled]="controlsDisabled">
       <span class="controls-label">Show marks:</span>
       <label class="checkbox-label">
         <input type="checkbox" [checked]="showHeadBox" (change)="showHeadBox = !showHeadBox; onMarkToggle()" [disabled]="controlsDisabled">
